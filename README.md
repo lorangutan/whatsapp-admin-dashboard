@@ -1,0 +1,81 @@
+# WA Monitor
+
+WhatsApp sales CRM + response-time (SLA) reports for small dealers, bengkel and motor bekas sellers.
+Each sales agent links their own WhatsApp number; the owner sees every chat, replies from the
+dashboard, tracks each lead through a pipeline, and gets a daily summary on WhatsApp.
+
+> **Pilot only.** Numbers are linked through [Baileys](https://github.com/WhiskeySockets/Baileys), an
+> unofficial WhatsApp Web client. This breaks WhatsApp's ToS and a number can be banned. Use it for
+> 1:1 replies only (plus the owner's daily report) — **never for broadcasts or bulk sending**.
+> Production should move to the official Cloud API with Coexistence; see `src/channels/types.ts`.
+
+## Run
+
+```bash
+npm install
+npm run seed   # optional: 3 fake agents with a week of chats and CRM data (safe to re-run)
+npm run dev    # http://127.0.0.1:3000
+```
+
+Copy `.env.example` to `.env` to change settings. With no `DATABASE_URL`, data lives in an embedded
+Postgres (PGlite) under `./data` — only one process may open it at a time, so stop the server before
+`npm run seed`. Set `DATABASE_URL` for a real Postgres; the SQL is the same. Schema changes are
+applied on startup (every statement is idempotent).
+
+Link a number: **Nomor WA → Hubungkan nomor**, then on the agent's phone open WhatsApp →
+Perangkat tertaut → Tautkan perangkat and scan the QR. Recent history and the address book are
+imported on that first link, so reports and contact names are there from day one.
+
+## Features
+
+| Area | What it does |
+|---|---|
+| **Inbox** | All numbers in one list: unread badges, "belum dibalas" filter, stage/agent filters, search by name/number/unit, infinite scroll. Reply from the dashboard through the number that owns the chat (optimistic send, retry on failure). `/` opens quick replies. |
+| **Lead panel** | Per chat: stage, unit of interest, deal value, tags, follow-ups, internal notes, editable contact name. |
+| **Lead capture** | A live message from a customer whose chat isn't triaged yet becomes a lead in "Baru". History-imported chats stay out of the pipeline until you add them. "Bukan lead" keeps friends/family out for good. |
+| **Pipeline** | Kanban by stage with value totals and time-in-stage; drag & drop or right-click to move, with undo. |
+| **Follow-up** | Reminders grouped Terlambat / Hari ini / Besok / Nanti; tick to complete; badge on the rail when due. |
+| **Laporan** | SLA % per sales, median and first-response time, leads waiting, deals won, pipeline funnel. |
+| **Daily report** | WhatsApp summary to the owner at a set time, including deals. |
+| **Live** | Server-Sent Events push new messages, stage changes and connection status to open dashboards. |
+
+Keyboard: <kbd>Ctrl/⌘ K</kbd> command palette (views, actions, chat search) · <kbd>↑</kbd><kbd>↓</kbd>
+move between chats · <kbd>Enter</kbd> focus reply · <kbd>Esc</kbd> close panel/menu/chat · right-click
+(long-press on touch) for quick actions.
+
+Deliberately not included (yet): broadcasts/campaigns and chatbots (ban risk on an unofficial
+connection; revisit with the Cloud API), payments, Instagram, lead reassignment between numbers.
+
+## How SLA is measured (`src/sla`)
+
+- **Turn**: a burst of customer messages, from the first one until the agent's first reply.
+  Five messages in a row count as one wait, not five.
+- **Business hours only**: a chat at 22:00 answered at 08:05 the next day counts as 5 minutes.
+  Hours and time zone (WIB/WITA/WIT) are set in Pengaturan.
+- **Off-hours exchanges** (asked and answered while closed, e.g. Sunday chat) count as on time but are
+  left out of median/first-response, so they don't drag those numbers to zero.
+- **First response**: a turn that opens a conversation (no messages in the previous 24 h).
+- **SLA %** = turns answered within target ÷ (answered + still-unanswered-past-target).
+- Agent messages with nothing pending (follow-ups, promos) don't count.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `src/channels/` | `ChannelAdapter` interface, Baileys implementation, per-number connection manager |
+| `src/db/` | Schema + migrations (multi-tenant ready: `shop_id` everywhere), queries |
+| `src/sla/` | Pure SLA engine + tests (`npm test`) |
+| `src/report/` | Report building, daily WhatsApp summary + scheduler |
+| `src/events.ts` | Live event bus behind `/api/events` (SSE) |
+| `src/server.ts` | REST API (`/api/...`), serves `public/` |
+| `public/js/` | Dashboard as plain ES modules, no build step: `app` (shell, router, shortcuts), `inbox`, `convo` (conversation + lead panel), `pipeline`, `followups`, `reports`, `numbers`, `settings`, `palette`, `lib`, `store` |
+| `public/css/app.css` | Design tokens (dark default, light via `prefers-color-scheme`) and components |
+
+## Known gaps
+
+- No user accounts or roles: one shop per install, optional `ADMIN_TOKEN` for the API. Keep
+  `HOST=127.0.0.1` or put it behind HTTPS before exposing it.
+- Pipeline stages are stored per shop but not editable in the UI yet.
+- Media is recorded by type only (no files stored, no sending media).
+- Customer chats are personal data under UU PDP — you'll need a privacy policy and retention rules
+  before onboarding real shops.
