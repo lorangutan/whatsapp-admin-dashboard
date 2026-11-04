@@ -1,0 +1,27 @@
+[Unit]
+Description=Wamon - WhatsApp sales CRM
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wamon
+Group=wamon
+WorkingDirectory=/opt/wamon
+EnvironmentFile=/etc/wamon.env
+# TypeScript runs directly through the tsx loader; no build step.
+ExecStart=/usr/bin/node --import tsx src/index.ts
+Restart=always
+RestartSec=5
+# Give WhatsApp sockets time to close cleanly on restart.
+TimeoutStopSec=20
+
+# Hardening: the app may only write to its data directory.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/wamon
+
+[Install]
+WantedBy=multi-user.target

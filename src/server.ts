@@ -7,6 +7,7 @@ import type { Db } from './db/index.js';
 import * as repo from './db/repo.js';
 import { ChannelOfflineError, type ChannelManager } from './channels/manager.js';
 import { bus } from './events.js';
+import { registerAuth } from './auth.js';
 import { localDayStart } from './sla/businessHours.js';
 import { buildReport, shopClock } from './report/service.js';
 import { formatDailyReport, sendDailyReport } from './report/daily.js';
@@ -16,18 +17,13 @@ const DAY = 86_400_000;
 type IdParams = { Params: { id: string } };
 
 export function buildServer(db: Db, channels: ChannelManager, loggerInstance: FastifyBaseLogger) {
-  const app = Fastify({ loggerInstance, disableRequestLogging: true });
+  const app = Fastify({ loggerInstance, disableRequestLogging: true, trustProxy: config.trustProxy });
 
   app.register(fastifyStatic, {
     root: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public'),
   });
 
-  app.addHook('onRequest', async (req, reply) => {
-    if (!config.adminToken || !req.url.startsWith('/api')) return;
-    // EventSource can't send headers, so the live stream takes the token as a query parameter.
-    const token = req.headers['x-admin-token'] ?? (req.query as { token?: string }).token;
-    if (token !== config.adminToken) return reply.code(401).send({ error: 'unauthorized' });
-  });
+  registerAuth(app);
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof ChannelOfflineError) return reply.code(409).send({ error: err.message });

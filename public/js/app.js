@@ -130,9 +130,57 @@ function onKey(e) {
   current.view?.onKey?.(e);
 }
 
+/** Full-screen password prompt; resolves once the session cookie is set. */
+function showLogin() {
+  return new Promise((resolve) => {
+    const el = document.createElement('div');
+    el.className = 'login';
+    el.innerHTML = `<form class="login-card" autocomplete="on">
+      <div class="logo">${icon('chat', 26)}</div>
+      <h1>Wamon</h1>
+      <p class="muted">Masuk untuk melihat chat dan laporan</p>
+      <input class="input" type="password" name="password" placeholder="Password" autocomplete="current-password" required autofocus>
+      <div class="login-error bad small" role="alert"></div>
+      <button class="btn" type="submit">Masuk</button>
+    </form>`;
+    document.body.append(el);
+    const form = $('form', el);
+    form.password.focus();
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $('button', form);
+      btn.disabled = true;
+      try {
+        await api('/api/login', { method: 'POST', body: { password: form.password.value } });
+        el.classList.add('leaving');
+        setTimeout(() => el.remove(), 250);
+        resolve();
+      } catch (err) {
+        $('.login-error', form).textContent = err.message;
+        form.classList.remove('shake');
+        void form.offsetWidth;
+        form.classList.add('shake');
+        form.password.select();
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  });
+}
+
+export async function logout() {
+  await api('/api/logout', { method: 'POST' }).catch(() => {});
+  location.reload();
+}
+
 async function start() {
   applyTheme();
   try {
+    const session = await api('/api/session');
+    if (session.required && !session.loggedIn) await showLogin();
+    // A session that expires mid-use sends the user back to the login screen.
+    addEventListener('auth-required', () => location.reload(), { once: true });
+    addEventListener('wamon-logout', logout);
     await loadBase();
   } catch (err) {
     main.innerHTML = `<div class="empty"><div class="inner"><div class="ttl">Server tidak bisa dihubungi</div><div class="txt">${err.message}</div></div></div>`;

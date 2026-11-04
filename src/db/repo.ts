@@ -22,17 +22,19 @@ export interface Channel {
   status: ChannelStatus;
 }
 
+const json = <T>(v: unknown): T => (typeof v === 'string' ? JSON.parse(v) : v) as T;
+
 export async function getShop(db: Db): Promise<Shop> {
   const [r] = await db.query<Record<string, any>>('SELECT * FROM shops ORDER BY id LIMIT 1');
   return {
     id: r.id,
     name: r.name,
     utcOffsetMinutes: r.utc_offset_minutes,
-    businessHours: typeof r.business_hours === 'string' ? JSON.parse(r.business_hours) : r.business_hours,
+    businessHours: json(r.business_hours),
     slaTargetMinutes: r.sla_target_minutes,
     ownerWa: r.owner_wa,
     reportTime: r.report_time,
-    pipelineStages: typeof r.pipeline_stages === 'string' ? JSON.parse(r.pipeline_stages) : r.pipeline_stages,
+    pipelineStages: json(r.pipeline_stages),
   };
 }
 
@@ -48,36 +50,76 @@ export async function updateShop(db: Db, id: number, patch: Partial<Omit<Shop, '
   };
   const set = Object.entries(columns).filter(([, v]) => v !== undefined);
   if (!set.length) return;
-  await db.query(
-    `UPDATE shops SET ${set.map(([k], i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1`,
-    [id, ...set.map(([, v]) => v)],
-  );
-}
-
-const channelCols = 'id, shop_id AS "shopId", agent_name AS "agentName", phone, status';
-
-export function listChannels(db: Db, shopId: number): Promise<Channel[]> {
-  return db.query<Channel>(`SELECT ${channelCols} FROM channels WHERE shop_id = $1 ORDER BY id`, [shopId]);
-}
-
-export async function createChannel(db: Db, shopId: number, agentName: string): Promise<Channel> {
-  const [c] = await db.query<Channel>(
-    `INSERT INTO channels (shop_id, agent_name) VALUES ($1, $2) RETURNING ${channelCols}`,
-    [shopId, agentName],
-  );
-  return c;
-}
-
-export async function setChannelStatus(db: Db, id: number, status: ChannelStatus, phone?: string) {
-  await db.query('UPDATE channels SET status = $2, phone = COALESCE($3, phone) WHERE id = $1', [
+  await db.run(`UPDATE shops SET ${set.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`, [
+    ...set.map(([, v]) => v),
     id,
-    status,
-    phone ?? null,
   ]);
 }
 
+const channelCols = 'id, shop_id AS shopId, agent_name AS agentName, phone, status';
+
+export function listChannels(db: Db, shopId: number): Promise<Channel[]> {
+  return db.query<Channel>(`SELECT ${channelCols} FROM channels WHERE shop_id = ? ORDER BY id`, [shopId]);
+}
+
+export async function createChannel(db: Db, shopId: number, agentName: string): Promise<Channel> {
+  const { insertId } = await db.run('INSERT INTO channels (shop_id, agent_name) VALUES (?, ?)', [shopId, agentName]);
+  return { id: insertId, shopId, agentName, phone: null, status: 'disconnected' };
+}
+
+export async function setChannelStatus(db: Db, id: number, status: ChannelStatus, phone?: string) {
+  await db.run('UPDATE channels SET status = ?, phone = COALESCE(?, phone) WHERE id = ?', [status, phone ?? null, id]);
+}
+
+/** Removes a number and everything recorded under it. */
 export async function deleteChannel(db: Db, id: number) {
-  await db.query('DELETE FROM channels WHERE id = $1', [id]);
+  await db.run('DELETE m FROM messages m JOIN chats c ON c.id = m.chat_id WHERE c.channel_id = ?', [id]);
+  await db.run('DELETE n FROM notes n JOIN chats c ON c.id = n.chat_id WHERE c.channel_id = ?', [id]);
+  await db.run('DELETE f FROM followups f JOIN chats c ON c.id = f.chat_id WHERE c.channel_id = ?', [id]);
+  await db.run('DELETE FROM chats WHERE channel_id = ?', [id]);
+  await db.run('DELETE FROM channels WHERE id = ?', [id]);
+}
+
+/** Upserts a chat and returns its id. A name already on the chat (e.g. from the address book) is kept. */
+async function upsertChat(db: Db, channelId: number, remoteJid: string, contactName: string | null) {
+  const { insertId } = await db.run(
+    `INSERT INTO chats (channel_id, remote_jid, contact_name) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), contact_name = COALESCE(contact_name, VALUES(contact_name))`,
+    [channelId, remoteJid, contactName],
+  );
+  if (insertId) return insertId;
+  const [row] = await db.query<{ id: number }>('SELECT id FROM chats WHERE channel_id = ? AND remote_jid = ?', [
+    channelId,
+    remoteJid,
+  ]);
+  return row.id;
+}
+
+/**
+ * Recomputes a chat's summary columns from its messages: latest message, last reply and the
+ * unread count (customer messages after both the last reply and the last time it was opened).
+ */
+export async function refreshChat(db: Db, chatId: number) {
+  const [last] = await db.query<{ body: string | null; fromMe: boolean; kind: string; sentAt: Date }>(
+    'SELECT body, from_me AS fromMe, kind, sent_at AS sentAt FROM messages WHERE chat_id = ? ORDER BY sent_at DESC, id DESC LIMIT 1',
+    [chatId],
+  );
+  const [state] = await db.query<{ replyAt: Date | null; readAt: Date | null }>(
+    `SELECT (SELECT MAX(sent_at) FROM messages WHERE chat_id = ? AND from_me = 1) AS replyAt, last_read_at AS readAt
+       FROM chats WHERE id = ?`,
+    [chatId, chatId],
+  );
+  if (!state) return;
+  const since = new Date(Math.max(state.replyAt?.getTime() ?? 0, state.readAt?.getTime() ?? 0));
+  const [{ n }] = await db.query<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM messages WHERE chat_id = ? AND from_me = 0 AND sent_at > ?',
+    [chatId, since],
+  );
+  await db.run(
+    `UPDATE chats SET last_message_at = ?, last_body = ?, last_from_me = ?, last_kind = ?, last_reply_at = ?, unread = ?
+      WHERE id = ?`,
+    [last?.sentAt ?? null, last?.body ?? null, last?.fromMe ?? null, last?.kind ?? null, state.replyAt, Number(n), chatId],
+  );
 }
 
 /**
@@ -86,64 +128,58 @@ export async function deleteChannel(db: Db, id: number) {
  * Returns the ids of chats that received new messages.
  */
 export async function saveMessages(db: Db, channelId: number, messages: InboundMessage[]): Promise<number[]> {
-  const chatIds = new Map<string, number>();
-  const touched = new Set<number>();
+  // Group by chat so a history sync of thousands of messages is a few bulk inserts, not one round trip each.
+  const byChat = new Map<string, InboundMessage[]>();
   for (const m of messages) {
-    let chatId = chatIds.get(m.remoteJid);
-    if (chatId === undefined || m.contactName) {
-      const [row] = await db.query<{ id: number }>(
-        `INSERT INTO chats (channel_id, remote_jid, contact_name, last_message_at) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (channel_id, remote_jid) DO UPDATE SET
-           -- Keep an existing name: an address-book name from setContactNames beats a pushName.
-           contact_name    = COALESCE(chats.contact_name, EXCLUDED.contact_name),
-           last_message_at = GREATEST(chats.last_message_at, EXCLUDED.last_message_at)
-         RETURNING id`,
-        [channelId, m.remoteJid, m.contactName ?? null, m.sentAt],
-      );
-      chatId = row.id;
-      chatIds.set(m.remoteJid, chatId);
-    } else {
-      await db.query('UPDATE chats SET last_message_at = GREATEST(last_message_at, $2) WHERE id = $1', [
-        chatId,
-        m.sentAt,
-      ]);
-    }
-    const rows = await db.query(
-      `INSERT INTO messages (chat_id, wa_id, from_me, kind, body, sent_at) VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (chat_id, wa_id) DO NOTHING RETURNING id`,
-      [chatId, m.waId, m.fromMe, m.kind, m.body, m.sentAt],
-    );
-    if (!rows.length) continue;
-    touched.add(chatId);
-    if (m.live && !m.fromMe) {
-      await db.query(`UPDATE chats SET stage = 'new', stage_changed_at = $2 WHERE id = $1 AND stage IS NULL`, [
-        chatId,
-        m.sentAt,
-      ]);
-    }
+    const list = byChat.get(m.remoteJid) ?? [];
+    list.push(m);
+    byChat.set(m.remoteJid, list);
   }
-  return [...touched];
+
+  const touched: number[] = [];
+  for (const [remoteJid, list] of byChat) {
+    const name = list.findLast((m) => m.contactName)?.contactName ?? null;
+    const chatId = await upsertChat(db, channelId, remoteJid, name);
+    let inserted = 0;
+    for (let i = 0; i < list.length; i += 400) {
+      const rows = list.slice(i, i + 400).map((m) => [chatId, m.waId, m.fromMe, m.kind, m.body, m.sentAt]);
+      inserted += (await db.run('INSERT IGNORE INTO messages (chat_id, wa_id, from_me, kind, body, sent_at) VALUES ?', [rows]))
+        .affectedRows;
+    }
+    if (!inserted) continue;
+    touched.push(chatId);
+    const firstLive = list.find((m) => m.live && !m.fromMe);
+    if (firstLive) {
+      await db.run(`UPDATE chats SET stage = 'new', stage_changed_at = ? WHERE id = ? AND stage IS NULL`, [
+        firstLive.sentAt,
+        chatId,
+      ]);
+    }
+    await refreshChat(db, chatId);
+  }
+  return touched;
 }
 
 export async function setContactNames(db: Db, channelId: number, contacts: { jids: string[]; name: string }[]) {
   for (const c of contacts) {
-    await db.query('UPDATE chats SET contact_name = $3 WHERE channel_id = $1 AND remote_jid = ANY($2::text[])', [
+    if (!c.jids.length) continue;
+    await db.run('UPDATE chats SET contact_name = ? WHERE channel_id = ? AND remote_jid IN (?)', [
+      c.name,
       channelId,
       c.jids,
-      c.name,
     ]);
   }
 }
 
 /**
- * Folds chats stored under a LID into the phone-number chat for the same person.
- * Returns how many LID chats were merged or renamed.
+ * Folds chats stored under a LID into the phone-number chat for the same person, including their
+ * notes, follow-ups and lead stage. Returns how many LID chats were merged or renamed.
  */
 export async function mergeLidChats(db: Db, channelId: number, mappings: { lid: string; pn: string }[]) {
   let merged = 0;
   for (const { lid, pn } of mappings) {
-    const rows = await db.query<{ id: number; remote_jid: string; contact_name: string | null }>(
-      'SELECT id, remote_jid, contact_name FROM chats WHERE channel_id = $1 AND remote_jid = ANY($2::text[])',
+    const rows = await db.query<{ id: number; remote_jid: string; contact_name: string | null; stage: string | null }>(
+      'SELECT id, remote_jid, contact_name, stage FROM chats WHERE channel_id = ? AND remote_jid IN (?)',
       [channelId, [lid, pn]],
     );
     const lidChat = rows.find((r) => r.remote_jid === lid);
@@ -151,30 +187,31 @@ export async function mergeLidChats(db: Db, channelId: number, mappings: { lid: 
     if (!lidChat) continue;
     merged++;
     if (!pnChat) {
-      await db.query('UPDATE chats SET remote_jid = $2 WHERE id = $1', [lidChat.id, pn]);
+      await db.run('UPDATE chats SET remote_jid = ? WHERE id = ?', [pn, lidChat.id]);
       continue;
     }
     // The same message can be stored under both ids; drop the copy before moving the rest.
-    await db.query(
-      `DELETE FROM messages WHERE chat_id = $1 AND wa_id IN (SELECT wa_id FROM messages WHERE chat_id = $2)`,
-      [lidChat.id, pnChat.id],
+    await db.run(
+      'DELETE m FROM messages m JOIN messages keep ON keep.wa_id = m.wa_id AND keep.chat_id = ? WHERE m.chat_id = ?',
+      [pnChat.id, lidChat.id],
     );
-    await db.query('UPDATE messages SET chat_id = $2 WHERE chat_id = $1', [lidChat.id, pnChat.id]);
-    await db.query(
-      `UPDATE chats SET
-         contact_name    = COALESCE(contact_name, $2),
-         last_message_at = (SELECT max(sent_at) FROM messages WHERE chat_id = $1)
-       WHERE id = $1`,
-      [pnChat.id, lidChat.contact_name],
-    );
-    await db.query('DELETE FROM chats WHERE id = $1', [lidChat.id]);
+    for (const table of ['messages', 'notes', 'followups']) {
+      await db.run(`UPDATE ${table} SET chat_id = ? WHERE chat_id = ?`, [pnChat.id, lidChat.id]);
+    }
+    await db.run('UPDATE chats SET contact_name = COALESCE(contact_name, ?), stage = COALESCE(stage, ?) WHERE id = ?', [
+      lidChat.contact_name,
+      lidChat.stage,
+      pnChat.id,
+    ]);
+    await db.run('DELETE FROM chats WHERE id = ?', [lidChat.id]);
+    await refreshChat(db, pnChat.id);
   }
   return merged;
 }
 
 export async function lidChatJids(db: Db, channelId: number): Promise<string[]> {
   const rows = await db.query<{ remote_jid: string }>(
-    `SELECT remote_jid FROM chats WHERE channel_id = $1 AND remote_jid LIKE '%@lid'`,
+    `SELECT remote_jid FROM chats WHERE channel_id = ? AND remote_jid LIKE '%@lid'`,
     [channelId],
   );
   return rows.map((r) => r.remote_jid);
@@ -214,48 +251,51 @@ export interface ChatFilter {
   limit?: number;
 }
 
-export function listChats(db: Db, shopId: number, f: ChatFilter = {}): Promise<ChatListItem[]> {
-  return db.query<ChatListItem>(
-    `SELECT c.id, c.channel_id AS "channelId", ch.agent_name AS "agentName", ch.status AS "channelStatus",
-            c.remote_jid AS "remoteJid", c.contact_name AS "contactName", c.last_message_at AS "lastMessageAt",
-            last.body AS "lastBody", last.from_me AS "lastFromMe", last.kind AS "lastKind",
-            c.stage, c.stage_changed_at AS "stageChangedAt", c.deal_value::float8 AS "dealValue",
-            c.interest, c.tags, COALESCE(unread.n, 0)::int AS unread, fu.due_at AS "nextFollowupAt"
+export async function listChats(db: Db, shopId: number, f: ChatFilter = {}): Promise<ChatListItem[]> {
+  const where = ['ch.shop_id = ?'];
+  const params: unknown[] = [shopId];
+  if (f.id !== undefined) {
+    where.push('c.id = ?');
+    params.push(f.id);
+  }
+  if (f.channelId !== undefined) {
+    where.push('c.channel_id = ?');
+    params.push(f.channelId);
+  }
+  if (f.q) {
+    // LOWER() keeps search case-insensitive whatever the column collation is.
+    const like = `%${f.q.toLowerCase()}%`;
+    where.push('(LOWER(c.contact_name) LIKE ? OR c.remote_jid LIKE ? OR LOWER(c.interest) LIKE ?)');
+    params.push(like, like, like);
+  }
+  if (f.stage === 'lead') where.push(`c.stage IS NOT NULL AND c.stage <> 'none'`);
+  else if (f.stage) {
+    where.push('c.stage = ?');
+    params.push(f.stage);
+  }
+  if (f.unreplied) where.push('c.last_from_me = 0');
+  if (f.before) {
+    where.push('c.last_message_at < ?');
+    params.push(f.before);
+  }
+  const rows = await db.query<ChatListItem>(
+    `SELECT c.id, c.channel_id AS channelId, ch.agent_name AS agentName, ch.status AS channelStatus,
+            c.remote_jid AS remoteJid, c.contact_name AS contactName, c.last_message_at AS lastMessageAt,
+            c.last_body AS lastBody, c.last_from_me AS lastFromMe, c.last_kind AS lastKind,
+            c.stage, c.stage_changed_at AS stageChangedAt, c.deal_value AS dealValue, c.interest, c.tags, c.unread,
+            (SELECT MIN(f.due_at) FROM followups f WHERE f.chat_id = c.id AND f.done_at IS NULL) AS nextFollowupAt
        FROM chats c
        JOIN channels ch ON ch.id = c.channel_id
-       LEFT JOIN LATERAL (
-         SELECT body, from_me, kind FROM messages m WHERE m.chat_id = c.id ORDER BY sent_at DESC LIMIT 1
-       ) last ON true
-       LEFT JOIN LATERAL (
-         SELECT count(*) AS n FROM messages m
-          WHERE m.chat_id = c.id AND NOT m.from_me
-            AND m.sent_at > GREATEST(
-              COALESCE(c.last_read_at, '-infinity'::timestamptz),
-              COALESCE((SELECT max(sent_at) FROM messages r WHERE r.chat_id = c.id AND r.from_me), '-infinity'::timestamptz))
-       ) unread ON true
-       LEFT JOIN LATERAL (
-         SELECT min(due_at) AS due_at FROM followups f WHERE f.chat_id = c.id AND f.done_at IS NULL
-       ) fu ON true
-      WHERE ch.shop_id = $1
-        AND ($2::int IS NULL OR c.channel_id = $2)
-        AND ($3::text IS NULL OR c.contact_name ILIKE $3 OR c.remote_jid ILIKE $3 OR c.interest ILIKE $3)
-        AND ($4::text IS NULL OR ($4 = 'lead' AND c.stage IS NOT NULL AND c.stage <> 'none') OR c.stage = $4)
-        AND (NOT $5::boolean OR last.from_me = false)
-        AND ($6::timestamptz IS NULL OR c.last_message_at < $6)
-        AND ($8::int IS NULL OR c.id = $8)
-      ORDER BY c.last_message_at DESC NULLS LAST
-      LIMIT $7`,
-    [
-      shopId,
-      f.channelId ?? null,
-      f.q ? `%${f.q}%` : null,
-      f.stage ?? null,
-      f.unreplied ?? false,
-      f.before ?? null,
-      f.limit ?? 60,
-      f.id ?? null,
-    ],
+      WHERE ${where.join(' AND ')}
+      ORDER BY c.last_message_at IS NULL, c.last_message_at DESC
+      LIMIT ?`,
+    [...params, f.limit ?? 60],
   );
+  for (const r of rows) {
+    r.tags = json<string[] | null>(r.tags) ?? [];
+    r.dealValue = r.dealValue == null ? null : Number(r.dealValue);
+  }
+  return rows;
 }
 
 export async function getChat(db: Db, shopId: number, id: number): Promise<ChatListItem | undefined> {
@@ -273,27 +313,26 @@ export interface StoredMessage {
 }
 
 /** The latest `limit` messages before `before`, oldest first (for upward infinite scroll). */
-export function getMessages(db: Db, chatId: number, before?: Date, limit = 80) {
-  return db.query<StoredMessage>(
-    `SELECT * FROM (
-       SELECT id::text, wa_id AS "waId", from_me AS "fromMe", kind, body, sent_at AS "sentAt"
-         FROM messages WHERE chat_id = $1 AND ($2::timestamptz IS NULL OR sent_at < $2)
-        ORDER BY sent_at DESC LIMIT $3
-     ) t ORDER BY "sentAt"`,
-    [chatId, before ?? null, limit],
+export async function getMessages(db: Db, chatId: number, before?: Date, limit = 80) {
+  const rows = await db.query<StoredMessage>(
+    `SELECT CAST(id AS CHAR) AS id, wa_id AS waId, from_me AS fromMe, kind, body, sent_at AS sentAt
+       FROM messages WHERE chat_id = ? ${before ? 'AND sent_at < ?' : ''}
+      ORDER BY sent_at DESC, id DESC LIMIT ?`,
+    before ? [chatId, before, limit] : [chatId, limit],
   );
+  return rows.reverse();
 }
 
 export async function chatTarget(db: Db, chatId: number) {
   const [row] = await db.query<{ channelId: number; remoteJid: string }>(
-    'SELECT channel_id AS "channelId", remote_jid AS "remoteJid" FROM chats WHERE id = $1',
+    'SELECT channel_id AS channelId, remote_jid AS remoteJid FROM chats WHERE id = ?',
     [chatId],
   );
   return row;
 }
 
 export async function markRead(db: Db, chatId: number) {
-  await db.query('UPDATE chats SET last_read_at = now() WHERE id = $1', [chatId]);
+  await db.run('UPDATE chats SET last_read_at = UTC_TIMESTAMP(3), unread = 0 WHERE id = ?', [chatId]);
 }
 
 export interface LeadPatch {
@@ -309,14 +348,14 @@ export async function updateLead(db: Db, chatId: number, patch: LeadPatch) {
     stage: patch.stage,
     deal_value: patch.dealValue,
     interest: patch.interest,
-    tags: patch.tags,
+    tags: patch.tags && JSON.stringify(patch.tags),
     contact_name: patch.contactName,
   };
   const set = Object.entries(columns).filter(([, v]) => v !== undefined);
   if (!set.length) return;
-  const sql = set.map(([k], i) => `${k} = $${i + 2}`);
-  if (patch.stage !== undefined) sql.push('stage_changed_at = now()');
-  await db.query(`UPDATE chats SET ${sql.join(', ')} WHERE id = $1`, [chatId, ...set.map(([, v]) => v)]);
+  const sql = set.map(([k]) => `${k} = ?`);
+  if (patch.stage !== undefined) sql.push('stage_changed_at = UTC_TIMESTAMP(3)');
+  await db.run(`UPDATE chats SET ${sql.join(', ')} WHERE id = ?`, [...set.map(([, v]) => v), chatId]);
 }
 
 export interface Note {
@@ -326,20 +365,17 @@ export interface Note {
 }
 
 export const listNotes = (db: Db, chatId: number) =>
-  db.query<Note>('SELECT id, body, created_at AS "createdAt" FROM notes WHERE chat_id = $1 ORDER BY created_at DESC', [
+  db.query<Note>('SELECT id, body, created_at AS createdAt FROM notes WHERE chat_id = ? ORDER BY created_at DESC', [
     chatId,
   ]);
 
 export async function addNote(db: Db, chatId: number, body: string): Promise<Note> {
-  const [n] = await db.query<Note>(
-    'INSERT INTO notes (chat_id, body) VALUES ($1, $2) RETURNING id, body, created_at AS "createdAt"',
-    [chatId, body],
-  );
-  return n;
+  const { insertId } = await db.run('INSERT INTO notes (chat_id, body) VALUES (?, ?)', [chatId, body]);
+  return { id: insertId, body, createdAt: new Date() };
 }
 
 export async function deleteNote(db: Db, id: number) {
-  await db.query('DELETE FROM notes WHERE id = $1', [id]);
+  await db.run('DELETE FROM notes WHERE id = ?', [id]);
 }
 
 export interface Followup {
@@ -354,33 +390,39 @@ export interface Followup {
   stage: string | null;
 }
 
-const followupCols = `f.id, f.chat_id AS "chatId", f.due_at AS "dueAt", f.note, f.done_at AS "doneAt",
-  c.contact_name AS "contactName", c.remote_jid AS "remoteJid", ch.agent_name AS "agentName", c.stage`;
-
 export function listFollowups(db: Db, shopId: number, opts: { chatId?: number; includeDone?: boolean } = {}) {
+  const where = ['ch.shop_id = ?'];
+  const params: unknown[] = [shopId];
+  if (opts.chatId !== undefined) {
+    where.push('f.chat_id = ?');
+    params.push(opts.chatId);
+  }
+  if (!opts.includeDone) where.push('f.done_at IS NULL');
   return db.query<Followup>(
-    `SELECT ${followupCols}
+    `SELECT f.id, f.chat_id AS chatId, f.due_at AS dueAt, f.note, f.done_at AS doneAt,
+            c.contact_name AS contactName, c.remote_jid AS remoteJid, ch.agent_name AS agentName, c.stage
        FROM followups f JOIN chats c ON c.id = f.chat_id JOIN channels ch ON ch.id = c.channel_id
-      WHERE ch.shop_id = $1 AND ($2::int IS NULL OR f.chat_id = $2) AND ($3::boolean OR f.done_at IS NULL)
-      ORDER BY f.done_at NULLS FIRST, f.due_at`,
-    [shopId, opts.chatId ?? null, opts.includeDone ?? false],
+      WHERE ${where.join(' AND ')}
+      ORDER BY f.done_at IS NOT NULL, f.due_at`,
+    params,
   );
 }
 
 export async function addFollowup(db: Db, chatId: number, dueAt: Date, note: string | null) {
-  const [{ id }] = await db.query<{ id: number }>(
-    'INSERT INTO followups (chat_id, due_at, note) VALUES ($1, $2, $3) RETURNING id',
-    [chatId, dueAt, note],
-  );
-  return id;
+  const { insertId } = await db.run('INSERT INTO followups (chat_id, due_at, note) VALUES (?, ?, ?)', [
+    chatId,
+    dueAt,
+    note,
+  ]);
+  return insertId;
 }
 
 export async function setFollowupDone(db: Db, id: number, done: boolean) {
-  await db.query('UPDATE followups SET done_at = CASE WHEN $2 THEN now() END WHERE id = $1', [id, done]);
+  await db.run('UPDATE followups SET done_at = IF(?, UTC_TIMESTAMP(3), NULL) WHERE id = ?', [done, id]);
 }
 
 export async function deleteFollowup(db: Db, id: number) {
-  await db.query('DELETE FROM followups WHERE id = $1', [id]);
+  await db.run('DELETE FROM followups WHERE id = ?', [id]);
 }
 
 export interface QuickReply {
@@ -390,41 +432,48 @@ export interface QuickReply {
 }
 
 export const listQuickReplies = (db: Db, shopId: number) =>
-  db.query<QuickReply>('SELECT id, shortcut, body FROM quick_replies WHERE shop_id = $1 ORDER BY shortcut', [shopId]);
+  db.query<QuickReply>('SELECT id, shortcut, body FROM quick_replies WHERE shop_id = ? ORDER BY shortcut', [shopId]);
 
 export async function saveQuickReply(db: Db, shopId: number, shortcut: string, body: string) {
-  const [r] = await db.query<QuickReply>(
-    `INSERT INTO quick_replies (shop_id, shortcut, body) VALUES ($1, $2, $3)
-     ON CONFLICT (shop_id, shortcut) DO UPDATE SET body = EXCLUDED.body RETURNING id, shortcut, body`,
+  await db.run(
+    `INSERT INTO quick_replies (shop_id, shortcut, body) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE body = VALUES(body)`,
     [shopId, shortcut, body],
   );
+  const [r] = await db.query<QuickReply>('SELECT id, shortcut, body FROM quick_replies WHERE shop_id = ? AND shortcut = ?', [
+    shopId,
+    shortcut,
+  ]);
   return r;
 }
 
 export async function deleteQuickReply(db: Db, id: number) {
-  await db.query('DELETE FROM quick_replies WHERE id = $1', [id]);
+  await db.run('DELETE FROM quick_replies WHERE id = ?', [id]);
 }
 
 /** Leads per stage with their total deal value. */
-export function pipelineTotals(db: Db, shopId: number) {
-  return db.query<{ stage: string; count: number; value: number }>(
-    `SELECT c.stage, count(*)::int AS count, COALESCE(sum(c.deal_value), 0)::float8 AS value
+export async function pipelineTotals(db: Db, shopId: number) {
+  const rows = await db.query<{ stage: string; count: number; value: number }>(
+    `SELECT c.stage, COUNT(*) AS count, COALESCE(SUM(c.deal_value), 0) AS value
        FROM chats c JOIN channels ch ON ch.id = c.channel_id
-      WHERE ch.shop_id = $1 AND c.stage IS NOT NULL AND c.stage <> 'none'
+      WHERE ch.shop_id = ? AND c.stage IS NOT NULL AND c.stage <> 'none'
       GROUP BY c.stage`,
     [shopId],
   );
+  return rows.map((r) => ({ stage: r.stage, count: Number(r.count), value: Number(r.value) }));
 }
 
 /** Leads that entered a closing stage during the period, per agent. */
-export function closedInPeriod(db: Db, shopId: number, stageIds: string[], from: Date, to: Date) {
-  return db.query<{ channelId: number; count: number; value: number }>(
-    `SELECT c.channel_id AS "channelId", count(*)::int AS count, COALESCE(sum(c.deal_value), 0)::float8 AS value
+export async function closedInPeriod(db: Db, shopId: number, stageIds: string[], from: Date, to: Date) {
+  if (!stageIds.length) return [];
+  const rows = await db.query<{ channelId: number; count: number; value: number }>(
+    `SELECT c.channel_id AS channelId, COUNT(*) AS count, COALESCE(SUM(c.deal_value), 0) AS value
        FROM chats c JOIN channels ch ON ch.id = c.channel_id
-      WHERE ch.shop_id = $1 AND c.stage = ANY($2::text[]) AND c.stage_changed_at >= $3 AND c.stage_changed_at < $4
+      WHERE ch.shop_id = ? AND c.stage IN (?) AND c.stage_changed_at >= ? AND c.stage_changed_at < ?
       GROUP BY c.channel_id`,
     [shopId, stageIds, from, to],
   );
+  return rows.map((r) => ({ channelId: r.channelId, count: Number(r.count), value: Number(r.value) }));
 }
 
 export interface SlaRow {
@@ -437,11 +486,11 @@ export interface SlaRow {
 /** Messages of every chat active since `since`, the raw input for SLA turns. */
 export function loadSlaRows(db: Db, shopId: number, since: Date): Promise<SlaRow[]> {
   return db.query<SlaRow>(
-    `SELECT c.channel_id AS "channelId", m.chat_id AS "chatId", m.from_me AS "fromMe", m.sent_at AS "sentAt"
+    `SELECT c.channel_id AS channelId, m.chat_id AS chatId, m.from_me AS fromMe, m.sent_at AS sentAt
        FROM messages m
        JOIN chats c ON c.id = m.chat_id
        JOIN channels ch ON ch.id = c.channel_id
-      WHERE ch.shop_id = $1 AND m.sent_at >= $2
+      WHERE ch.shop_id = ? AND m.sent_at >= ?
       ORDER BY m.chat_id, m.sent_at`,
     [shopId, since],
   );
@@ -450,7 +499,7 @@ export function loadSlaRows(db: Db, shopId: number, since: Date): Promise<SlaRow
 export function chatsById(db: Db, ids: number[]) {
   if (!ids.length) return Promise.resolve([]);
   return db.query<{ id: number; contactName: string | null; remoteJid: string }>(
-    `SELECT id, contact_name AS "contactName", remote_jid AS "remoteJid" FROM chats WHERE id = ANY($1::int[])`,
+    'SELECT id, contact_name AS contactName, remote_jid AS remoteJid FROM chats WHERE id IN (?)',
     [ids],
   );
 }

@@ -1,0 +1,4 @@
+# Server scripts and configs must keep Unix line endings even when committed from Windows.
+*.sh text eol=lf
+deploy/* text eol=lf
+*.png binary

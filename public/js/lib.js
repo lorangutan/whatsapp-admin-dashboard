@@ -1,42 +1,23 @@
 // Shared helpers: API, live events, formatting, icons, toasts, context menus, skeletons.
 
 // ---------- API ----------
-function token() {
-  try {
-    return localStorage.getItem('adminToken');
-  } catch {
-    return null;
-  }
-}
-
+// The session lives in an HttpOnly cookie; a 401 means it expired, so the app shows the login screen.
 export async function api(path, opts = {}) {
-  const t = token();
   const res = await fetch(path, {
     ...opts,
+    credentials: 'same-origin',
     body: opts.body && typeof opts.body !== 'string' ? JSON.stringify(opts.body) : opts.body,
-    headers: {
-      ...(opts.body ? { 'content-type': 'application/json' } : {}),
-      ...(t ? { 'x-admin-token': t } : {}),
-    },
+    headers: opts.body ? { 'content-type': 'application/json' } : {},
   });
-  if (res.status === 401) {
-    const entered = prompt('Admin token');
-    if (entered) {
-      try {
-        localStorage.setItem('adminToken', entered);
-      } catch {}
-      return api(path, opts);
-    }
-  }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && !path.startsWith('/api/login')) window.dispatchEvent(new Event('auth-required'));
   if (!res.ok) throw new Error(data.error ?? res.statusText);
   return data;
 }
 
 /** Server-Sent Events stream; reconnects on its own. */
 export function liveEvents(onEvent, onState) {
-  const t = token();
-  const es = new EventSource(`/api/events${t ? `?token=${encodeURIComponent(t)}` : ''}`);
+  const es = new EventSource('/api/events');
   es.onmessage = (e) => onEvent(JSON.parse(e.data));
   es.onopen = () => onState?.(true);
   es.onerror = () => onState?.(false);

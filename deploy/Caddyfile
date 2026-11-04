@@ -1,0 +1,15 @@
+# Caddy gets and renews the HTTPS certificate for the domain automatically.
+# setup.sh replaces {$WAMON_DOMAIN} with your domain.
+{$WAMON_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000 {
+		# Stream live updates (Server-Sent Events) immediately instead of buffering.
+		flush_interval -1
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		X-Frame-Options DENY
+	}
+}

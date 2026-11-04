@@ -79,7 +79,7 @@ const demoChannels = (await listChannels(db, shop.id)).filter((c) => agents.some
 let enriched = 0;
 for (const ch of demoChannels) {
   const chats = await db.query<{ id: number }>(
-    'SELECT id FROM chats WHERE channel_id = $1 AND stage IS NULL ORDER BY last_message_at DESC',
+    'SELECT id FROM chats WHERE channel_id = ? AND stage IS NULL ORDER BY last_message_at DESC',
     [ch.id],
   );
   for (const [i, { id }] of chats.entries()) {
@@ -92,9 +92,9 @@ for (const ch of demoChannels) {
       tags: rand() < 0.6 ? [tagPool[Math.floor(rand() * tagPool.length)]] : [],
     });
     // Spread "time in stage" over the last few days.
-    await db.query(`UPDATE chats SET stage_changed_at = now() - ($2 || ' hours')::interval WHERE id = $1`, [
+    await db.run('UPDATE chats SET stage_changed_at = UTC_TIMESTAMP(3) - INTERVAL ? HOUR WHERE id = ?', [
+      Math.floor(rand() * 96),
       id,
-      String(Math.floor(rand() * 96)),
     ]);
     if (['asked', 'visit', 'nego', 'dp'].includes(stage) && rand() < 0.7) {
       const due = new Date(now + (rand() * 4 - 1.2) * 86_400_000); // some overdue, some upcoming

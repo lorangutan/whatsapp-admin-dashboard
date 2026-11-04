@@ -21,6 +21,7 @@ export function openPalette(navigate) {
     { label: 'Laporan', icon: 'chart', run: () => navigate('#/reports'), kw: 'sla report statistik' },
     { label: 'Nomor WhatsApp', icon: 'phone', run: () => navigate('#/numbers'), kw: 'qr hubungkan sales' },
     { label: 'Pengaturan', icon: 'sliders', run: () => navigate('#/settings'), kw: 'jam buka balasan cepat' },
+    { label: 'Keluar', icon: 'back', run: () => window.dispatchEvent(new Event('wamon-logout')), kw: 'logout sign out' },
     ...THEMES.map((t) => ({
       label: `Tema: ${t.label}`,
       icon: t.icon,

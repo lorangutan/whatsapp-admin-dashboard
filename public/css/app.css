@@ -610,6 +610,33 @@ tr:last-child td { border-bottom: 0; }
 .toast button { border: 0; background: none; color: #25d366; font-weight: 700; padding: 0; text-transform: uppercase; font-size: 12.5px; letter-spacing: 0.03em; }
 :root[data-theme='dark'] .toast button { color: #008069; }
 
+/* ---------- login ---------- */
+.login {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px;
+  background:
+    radial-gradient(700px 500px at 15% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+    var(--bg);
+  animation: fade var(--med) ease-out;
+}
+.login.leaving { animation: fade-out 240ms var(--ease-io) forwards; }
+.login-card {
+  width: min(380px, 100%); display: grid; gap: 12px; justify-items: stretch; text-align: center;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 34px 30px 30px;
+  box-shadow: var(--shadow); animation: rise var(--med) var(--ease);
+}
+.login-card .logo {
+  justify-self: center; width: 56px; height: 56px; border-radius: 17px; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(145deg, #25d366, #00a884 60%, #008069); box-shadow: 0 6px 20px rgba(0, 168, 132, 0.35);
+}
+.login-card h1 { font-size: 24px; }
+.login-card p { margin: -6px 0 6px; font-size: 13.5px; }
+.login-card .input { padding: 11px 14px; font-size: 15px; }
+.login-card .btn { padding: 11px; font-size: 15px; }
+.login-error:empty { display: none; }
+.shake { animation: shake 0.4s var(--ease-io); }
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@keyframes fade-out { to { opacity: 0; } }
+
 /* View Transitions API (route changes) — a short, quiet cross-fade */
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 160ms; animation-timing-function: var(--ease-io); }
 

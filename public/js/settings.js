@@ -15,6 +15,10 @@ export function mountSettings({ main }) {
           ${THEMES.map((t) => `<button type="button" role="radio" data-theme-id="${t.id}">${icon(t.icon, 15)} ${t.label}</button>`).join('')}
         </div>
       </div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div><h2 style="margin-bottom:4px">Akun</h2><div class="muted small">Keluar dari dashboard di perangkat ini.</div></div>
+        <button class="btn danger" type="button" id="st-logout">Keluar</button>
+      </div>
       <form class="card" id="st-form" style="display:grid;gap:12px">
         <h2>Usaha & SLA</h2>
         <div class="row2">
@@ -77,6 +81,7 @@ export function mountSettings({ main }) {
   for (const b of $$('[data-theme-id]', main)) b.onclick = () => setThemePref(b.dataset.themeId);
   addEventListener('themechange', markTheme);
   markTheme();
+  $('#st-logout', main).onclick = () => window.dispatchEvent(new Event('wamon-logout'));
 
   const form = $('#st-form', main);
   form.onsubmit = async (e) => {
