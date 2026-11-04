@@ -4,7 +4,7 @@ import {
   empty, chatName, displayPhone, phoneOf,
 } from './lib.js';
 import {
-  store, stages, stageName, stageClass, leadMenu, patchLead, markRead, emitChat, tomorrowAt,
+  store, stages, stageName, stageClass, leadMenu, patchLead, markRead, emitChat, tomorrowAt, setResolved,
 } from './store.js';
 import { t, locale } from './i18n.js';
 
@@ -126,6 +126,8 @@ export function openConversation(host, chatId, { onBack } = {}) {
       ${chat.stage && chat.stage !== 'none'
         ? `<button class="pill ${stageClass(chat.stage)}" id="cv-stage" style="border:0">${esc(stageName(chat.stage))} ▾</button>`
         : `<button class="btn ghost sm" id="cv-stage">${icon('plus', 14)} ${t('Jadikan lead')}</button>`}
+      <button class="${chat.resolved ? 'pill good' : 'btn ghost sm'} resolve-btn" id="cv-resolve" title="${chat.resolved ? t('Tuntas — tekan untuk membuka lagi') : t('Tandai tuntas')}">
+        ${icon('checkCircle', 15)}<span class="hide-sm">${chat.resolved ? t('Tuntas') : t('Tandai tuntas')}</span></button>
       <button class="icon-btn" id="cv-fu" title="${t('Jadwalkan follow-up')}">${icon('clock')}</button>
       <button class="icon-btn ${panelOpen ? 'on' : ''}" id="cv-toggle" title="${t('Detail lead')}">${icon('panel')}</button>`;
     $('#cv-back', head)?.addEventListener('click', onBack);
@@ -136,6 +138,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
       const r = e.currentTarget.getBoundingClientRect();
       showMenu(r.left, r.bottom + 6, leadMenu(chat));
     };
+    $('#cv-resolve', head).onclick = () => setResolved(chat, !chat.resolved);
     $('#cv-fu', head).onclick = (e) => {
       const r = e.currentTarget.getBoundingClientRect();
       showMenu(r.left - 150, r.bottom + 6, followupPresets());

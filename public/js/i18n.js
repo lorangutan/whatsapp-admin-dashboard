@@ -177,6 +177,9 @@ const EN = {
 
   // follow-ups view
   'Belum selesai': 'To do',
+  'Tidak ada follow-up di sini': 'No follow-ups here',
+  'Coba filter lain untuk melihat pengingat yang lain.': 'Try another filter to see other reminders.',
+  'Lihat semua': 'See all',
   '{n} belum selesai': '{n} to do',
   '{n} terlambat': '{n} overdue',
   'Tidak ada follow-up': 'No follow-ups',
@@ -273,6 +276,15 @@ const EN = {
   Perintah: 'Commands',
   'Chat terbaru': 'Recent chats',
   'Tidak ada hasil untuk “{q}”': 'No results for “{q}”',
+
+  // tuntas (problem solved)
+  Tuntas: 'Resolved',
+  'Tandai tuntas': 'Mark resolved',
+  'Belum tuntas': 'Unresolved',
+  'Buka lagi': 'Reopen',
+  'Ditandai tuntas': 'Marked resolved',
+  'Tuntas — tekan untuk membuka lagi': 'Resolved — tap to reopen',
+  'median {d}': 'median {d}',
 
   // server messages
   'Akun demo tidak bisa melakukan ini': "The demo account can't do this",

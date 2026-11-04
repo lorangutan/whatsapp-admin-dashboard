@@ -19,7 +19,7 @@ export function renderChatItem(c, active) {
     <div class="body">
       <div class="row"><span class="name">${esc(chatName(c))}</span><span class="time">${esc(listTime(c.lastMessageAt))}</span></div>
       <div class="row"><span class="preview">${c.lastFromMe ? icon('checks', 15, 'class="faint"') : ''}<span>${esc(preview)}</span></span>
-        ${c.unread ? `<span class="badge">${c.unread}</span>` : c.lastFromMe === false ? `<span title="${t('Belum dibalas')}">${icon('clock', 15, 'class="mid"')}</span>` : ''}</div>
+        ${c.unread ? `<span class="badge">${c.unread}</span>` : c.resolved ? `<span title="${t('Tuntas')}">${icon('checkCircle', 16, 'class="good"')}</span>` : c.lastFromMe === false ? `<span title="${t('Belum dibalas')}">${icon('clock', 15, 'class="mid"')}</span>` : ''}</div>
       <div class="meta">
         ${c.stage && c.stage !== 'none' ? `<span class="pill ${stageClass(c.stage)}">${esc(stageName(c.stage))}</span>` : ''}
         ${due ? `<span class="pill ${overdue ? 'bad' : 'warn'}">${icon('clock', 11)} ${esc(dueLabel(due))}</span>` : ''}
@@ -99,6 +99,7 @@ export function mountInbox({ app, list, main, navigate }) {
     const modes = [
       ['all', t('Semua')],
       ['unreplied', t('Belum dibalas')],
+      ['unresolved', t('Belum tuntas')],
       ['lead', t('Leads')],
       ...stages().filter((s) => !s.outcome).map((s) => [s.id, t(s.name)]),
     ];
@@ -130,6 +131,7 @@ export function mountInbox({ app, list, main, navigate }) {
     if (filter.q) p.set('q', filter.q);
     if (filter.channelId) p.set('channelId', filter.channelId);
     if (filter.mode === 'unreplied') p.set('unreplied', '1');
+    else if (filter.mode === 'unresolved') p.set('unresolved', '1');
     else if (filter.mode !== 'all') p.set('stage', filter.mode);
     return `/api/chats?${p}`;
   }

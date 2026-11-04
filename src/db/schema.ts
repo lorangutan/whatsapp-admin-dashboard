@@ -129,6 +129,16 @@ CREATE TABLE IF NOT EXISTS quick_replies (
   UNIQUE KEY uq_quick_replies (shop_id, shortcut)
 );
 
+-- "Tuntas": each time an agent marks a conversation as solved (or it reaches Deal/Batal).
+-- A chat counts as tuntas while its latest resolution is newer than the customer's latest message,
+-- so a new message from the customer reopens it by itself. History is kept for the resolution metrics.
+CREATE TABLE IF NOT EXISTS resolutions (
+  id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+  chat_id     INT NOT NULL,
+  resolved_at DATETIME(3) NOT NULL,
+  KEY idx_resolutions_chat (chat_id, resolved_at)
+);
+
 -- Dashboard accounts. Each belongs to one shop and only ever sees that shop's data.
 -- The owner login from ADMIN_PASSWORD is not stored here (it always belongs to the first shop).
 -- Note: statements are split on semicolons, so comments in this file must not contain one.

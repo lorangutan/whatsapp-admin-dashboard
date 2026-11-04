@@ -217,6 +217,7 @@ const PATHS = {
   send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/>',
   panel: '<rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M15 3v18"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9"/>',
   checks: '<path d="M17 7 7.5 16.5 3 12M22 7l-9.5 9.5-1-1"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   back: '<path d="M19 12H5M12 19l-7-7 7-7"/>',

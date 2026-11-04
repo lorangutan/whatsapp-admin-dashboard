@@ -60,6 +60,7 @@ export function mountReports({ main, navigate }) {
         ${kpi(t('Dibalas ≤{m} mnt', { m: r.targetMinutes }), tot.slaPct == null ? '–' : `${tot.slaPct}%`, t('{a} dari {b}', { a: tot.withinTarget, b: tot.answered + tot.overdue }), slaClass(tot.slaPct))}
         ${kpi(t('Respon pertama'), dur(tot.avgFirstResponseMs), t('rata-rata, jam buka'))}
         ${kpi(t('Median balas'), dur(tot.medianResponseMs), `${t('{n} balasan jam buka', { n: tot.answered - tot.offHours })}${tot.offHours ? ` · ${t('{n} di luar jam', { n: tot.offHours })}` : ''}`)}
+        ${kpi(t('Tuntas'), tot.resolutionPct == null ? '–' : `${tot.resolutionPct}%`, `${t('{a} dari {b}', { a: tot.resolved, b: tot.conversations })}${tot.medianResolutionMs != null ? ` · ${t('median {d}', { d: dur(tot.medianResolutionMs) })}` : ''}`, slaClass(tot.resolutionPct))}
         ${kpi(t('Menunggu balasan'), r.waiting.length, t('{n} lewat target', { n: overdue }), overdue ? 'bad' : '')}
         ${kpi(t('Deal'), p.wonCount, p.wonValue ? rp(p.wonValue) : t('{n} percakapan baru', { n: tot.conversations }), p.wonCount ? 'good' : '')}
       </div>
@@ -67,13 +68,14 @@ export function mountReports({ main, navigate }) {
         <div class="card">
           <h2>${t('Performa per sales')}</h2>
           <div class="table-wrap"><table>
-            <thead><tr><th>${t('Sales')}</th><th>${t('Chat')}</th><th>SLA</th><th>${t('Median')}</th><th>${t('Respon pertama')}</th><th>${t('Telat')}</th><th>${t('Deal')}</th></tr></thead>
+            <thead><tr><th>${t('Sales')}</th><th>${t('Chat')}</th><th>SLA</th><th>${t('Median')}</th><th>${t('Respon pertama')}</th><th>${t('Tuntas')}</th><th>${t('Telat')}</th><th>${t('Deal')}</th></tr></thead>
             <tbody>${agents.map((a) => `<tr>
               <td><strong>${esc(a.agentName)}</strong><div class="faint small">${esc(a.phone ?? t('belum terhubung'))}</div></td>
               <td>${a.chats}</td>
               <td>${a.slaPct == null ? '–' : `<span class="pill ${slaClass(a.slaPct)}">${a.slaPct}%</span>`}</td>
               <td>${dur(a.medianResponseMs)}</td>
               <td>${dur(a.avgFirstResponseMs)}</td>
+              <td>${a.resolutionPct == null ? '–' : `<span class="pill ${slaClass(a.resolutionPct)}">${a.resolutionPct}%</span>${a.medianResolutionMs != null ? ` <span class="faint small">${dur(a.medianResolutionMs)}</span>` : ''}`}</td>
               <td class="${a.overdue ? 'bad' : ''}">${a.overdue}</td>
               <td>${a.wonCount ? `${a.wonCount}${a.wonValue ? ` <span class="faint small">${esc(rp(a.wonValue))}</span>` : ''}` : '–'}</td>
             </tr>`).join('')}</tbody>

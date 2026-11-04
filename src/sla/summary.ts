@@ -82,7 +82,7 @@ export function summarize(
   return s;
 }
 
-function median(values: number[]): number | null {
+export function median(values: number[]): number | null {
   if (!values.length) return null;
   const v = [...values].sort((a, b) => a - b);
   const mid = v.length >> 1;

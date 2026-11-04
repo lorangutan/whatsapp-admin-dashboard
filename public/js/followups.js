@@ -16,40 +16,79 @@ function bucket(due) {
   return ['later', t('Nanti')];
 }
 
+/** Filter chips. "today" includes overdue ones: both need doing now. */
+const VIEWS = [
+  { id: 'today', label: 'Hari ini', match: (f) => !f.doneAt && ['overdue', 'today'].includes(bucket(f.dueAt)[0]) },
+  { id: 'tomorrow', label: 'Besok', match: (f) => !f.doneAt && bucket(f.dueAt)[0] === 'tomorrow' },
+  { id: 'later', label: 'Nanti', match: (f) => !f.doneAt && bucket(f.dueAt)[0] === 'later' },
+  { id: 'all', label: 'Semua', match: (f) => !f.doneAt },
+  { id: 'done', label: 'Selesai', match: (f) => Boolean(f.doneAt) },
+];
+
+// The last chosen filter is remembered per device: no setting to look for, it stays how you left it.
+function savedView() {
+  try {
+    const v = localStorage.getItem('followupView');
+    if (VIEWS.some((x) => x.id === v)) return v;
+  } catch {}
+  return 'today';
+}
+
 export function mountFollowups({ app, list, main, navigate }) {
   let items = [];
-  let showDone = false;
+  let view = savedView();
   let activeChat = null;
   let convo = null;
 
   list.innerHTML = `
     <div class="pane-head"><h1>${t('Follow-up')}</h1><span class="count" id="fu-count"></span></div>
-    <div class="chips">
-      <button class="chip active" data-done="0">${t('Belum selesai')}</button>
-      <button class="chip" data-done="1">${t('Semua')}</button>
-    </div>
+    <div class="chips" id="fu-chips"></div>
     <div class="list" id="fu-list"></div>`;
   const listEl = $('#fu-list', list);
-  for (const b of $$('[data-done]', list)) {
-    b.onclick = () => {
-      showDone = b.dataset.done === '1';
-      $$('[data-done]', list).forEach((x) => x.classList.toggle('active', x === b));
-      load();
-    };
-  }
   welcome();
   load();
 
+  function setView(next) {
+    view = next;
+    try {
+      localStorage.setItem('followupView', next);
+    } catch {}
+    render();
+  }
+
   async function load({ quiet = false } = {}) {
     if (!quiet) listEl.innerHTML = skeletonList(6);
-    items = await api(`/api/followups${showDone ? '?includeDone=1' : ''}`);
+    items = await api('/api/followups?includeDone=1');
     render();
+  }
+
+  function renderChips() {
+    $('#fu-chips', list).innerHTML = VIEWS.map((v) => {
+      const n = items.filter(v.match).length;
+      const late = v.id === 'today' && items.some((f) => !f.doneAt && bucket(f.dueAt)[0] === 'overdue');
+      return `<button class="chip ${view === v.id ? 'active' : ''}" data-view="${v.id}">${t(v.label)}${
+        n ? ` <span class="chip-n ${late ? 'bad' : ''}">${n}</span>` : ''}</button>`;
+    }).join('');
+    for (const b of $$('[data-view]', list)) b.onclick = () => setView(b.dataset.view);
   }
 
   function render() {
     const open = items.filter((f) => !f.doneAt);
     const overdue = open.filter((f) => new Date(f.dueAt) < new Date()).length;
     $('#fu-count', list).textContent = `${t('{n} belum selesai', { n: open.length })}${overdue ? ` · ${t('{n} terlambat', { n: overdue })}` : ''}`;
+    renderChips();
+    const shown = items.filter(VIEWS.find((v) => v.id === view).match);
+    if (items.length && !shown.length) {
+      listEl.innerHTML = empty({
+        ico: 'clock',
+        title: t('Tidak ada follow-up di sini'),
+        text: t('Coba filter lain untuk melihat pengingat yang lain.'),
+        action: t('Lihat semua'),
+        actionId: 'fu-all',
+      });
+      $('#fu-all', listEl).onclick = () => setView('all');
+      return;
+    }
     if (!items.length) {
       listEl.innerHTML = empty({
         ico: 'clock',
@@ -63,7 +102,7 @@ export function mountFollowups({ app, list, main, navigate }) {
     }
     let html = '';
     let lastGroup = '';
-    for (const f of items) {
+    for (const f of shown) {
       const [key, label] = f.doneAt ? ['done', t('Selesai')] : bucket(f.dueAt);
       if (key !== lastGroup) {
         html += `<div class="list-section ${key === 'overdue' ? 'bad' : ''}">${label}</div>`;
@@ -91,7 +130,6 @@ export function mountFollowups({ app, list, main, navigate }) {
   async function setDone(id, done) {
     const f = items.find((x) => x.id === id);
     f.doneAt = done ? new Date().toISOString() : null;
-    if (done && !showDone) items = items.filter((x) => x !== f);
     render();
     try {
       await api(`/api/followups/${id}`, { method: 'PATCH', body: { done } });

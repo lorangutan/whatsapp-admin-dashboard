@@ -86,6 +86,22 @@ export async function addFollowup(chat, dueAt, note = '') {
   }
 }
 
+/** Optimistic "tuntas" toggle; marking offers Undo. A new customer message reopens it server-side. */
+export async function setResolved(chat, resolved) {
+  const before = { resolved: chat.resolved, resolvedAt: chat.resolvedAt };
+  Object.assign(chat, { resolved, resolvedAt: resolved ? new Date().toISOString() : null });
+  emitChat(chat);
+  try {
+    Object.assign(chat, await api(`/api/chats/${chat.id}/resolve`, { method: resolved ? 'POST' : 'DELETE' }));
+    emitChat(chat);
+    if (resolved) toast(t('Ditandai tuntas'), { action: t('Urungkan'), onAction: () => setResolved(chat, false) });
+  } catch (err) {
+    Object.assign(chat, before);
+    emitChat(chat);
+    toast(err.message, { error: true });
+  }
+}
+
 export async function markRead(chat) {
   if (!chat.unread) return;
   chat.unread = 0;
@@ -105,6 +121,9 @@ export function leadMenu(chat, { onOpen } = {}) {
       onClick: () => moveStage(chat, s.id),
     })),
     'sep',
+    chat.resolved
+      ? { label: t('Buka lagi'), icon: 'refresh', onClick: () => setResolved(chat, false) }
+      : { label: t('Tandai tuntas'), icon: 'checkCircle', onClick: () => setResolved(chat, true) },
     { label: t('Follow-up besok 09.00'), icon: 'clock', onClick: () => addFollowup(chat, tomorrowAt()) },
     ...(chat.unread ? [{ label: t('Tandai sudah dibaca'), icon: 'eye', onClick: () => markRead(chat) }] : []),
     { label: t('Salin nomor'), icon: 'copy', onClick: () => copy(phoneOf(chat.remoteJid)) },

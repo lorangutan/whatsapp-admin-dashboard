@@ -30,6 +30,7 @@ export function formatDailyReport(shop: Shop, report: Report): string {
     `Chat masuk: ${t.chats} (${t.conversations} percakapan baru)`,
     `Dibalas ≤${report.targetMinutes} mnt: ${t.slaPct ?? '-'}%`,
     `Rata-rata respon pertama: ${formatDuration(t.avgFirstResponseMs)}`,
+    `Masalah tuntas: ${t.resolutionPct ?? '-'}%${t.medianResolutionMs != null ? ` (median ${formatDuration(t.medianResolutionMs)})` : ''}`,
     `Belum dibalas: ${t.overdue + t.waiting}`,
     `Deal: ${report.pipeline.wonCount}` +
       (report.pipeline.wonValue ? ` (Rp ${report.pipeline.wonValue.toLocaleString('id-ID')})` : ''),

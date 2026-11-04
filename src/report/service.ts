@@ -1,11 +1,15 @@
 import type { Db } from '../db/index.js';
-import { chatsById, closedInPeriod, listChannels, loadSlaRows, pipelineTotals, type Shop } from '../db/repo.js';
+import { chatsById, closedInPeriod, listChannels, loadResolutions, loadSlaRows, pipelineTotals, type Shop } from '../db/repo.js';
 import type { Stage } from '../db/schema.js';
 import { businessMs, MINUTE, type ShopClock } from '../sla/businessHours.js';
 import { buildTurns, CONVERSATION_GAP_MS, type Turn } from '../sla/turns.js';
 import { summarize, type Period, type SlaSummary } from '../sla/summary.js';
+import { resolutionSummary, type ResolutionSummary } from '../sla/resolution.js';
 
-export interface AgentReport extends SlaSummary {
+/** Reply speed plus resolution ("tuntas") for one agent or the whole shop. */
+export type Summary = SlaSummary & ResolutionSummary;
+
+export interface AgentReport extends Summary {
   channelId: number;
   agentName: string;
   phone: string | null;
@@ -35,7 +39,7 @@ export interface WaitingLead {
 export interface Report {
   period: Period;
   targetMinutes: number;
-  totals: SlaSummary;
+  totals: Summary;
   agents: AgentReport[];
   waiting: WaitingLead[];
   pipeline: PipelineReport;
@@ -59,16 +63,29 @@ export async function buildReport(db: Db, shop: Shop, period: Period, now = new 
     chat.messages.push({ fromMe: r.fromMe, sentAt: new Date(r.sentAt) });
   }
 
-  const turnsByChannel = new Map<number, Turn[][]>();
+  const resolutionsByChat = new Map<number, Date[]>();
+  for (const r of await loadResolutions(db, shop.id, new Date(period.from.getTime() - CONVERSATION_GAP_MS))) {
+    const list = resolutionsByChat.get(r.chatId) ?? [];
+    list.push(new Date(r.resolvedAt));
+    resolutionsByChat.set(r.chatId, list);
+  }
+
+  type ChatTurns = { turns: Turn[]; resolutions: Date[] };
+  const byChannel = new Map<number, ChatTurns[]>();
   const pending: { chatId: number; channelId: number; turn: Turn }[] = [];
   for (const [chatId, chat] of byChat) {
-    const turns = buildTurns(chat.messages, clock);
-    const list = turnsByChannel.get(chat.channelId) ?? [];
-    list.push(turns);
-    turnsByChannel.set(chat.channelId, list);
+    const resolutions = resolutionsByChat.get(chatId) ?? [];
+    const turns = handledByResolution(buildTurns(chat.messages, clock), resolutions, clock);
+    const list = byChannel.get(chat.channelId) ?? [];
+    list.push({ turns, resolutions });
+    byChannel.set(chat.channelId, list);
     const last = turns.at(-1);
     if (last && last.repliedAt === null) pending.push({ chatId, channelId: chat.channelId, turn: last });
   }
+  const summary = (chats: ChatTurns[]): Summary => ({
+    ...summarize(chats.map((c) => c.turns), period, targetMs, clock, now),
+    ...resolutionSummary(chats, period, clock),
+  });
 
   const channels = await listChannels(db, shop.id);
   const agentName = new Map(channels.map((c) => [c.id, c.agentName]));
@@ -82,7 +99,7 @@ export async function buildReport(db: Db, shop: Shop, period: Period, now = new 
     channelId: c.id,
     agentName: c.agentName,
     phone: c.phone,
-    ...summarize(turnsByChannel.get(c.id) ?? [], period, targetMs, clock, now),
+    ...summary(byChannel.get(c.id) ?? []),
     wonCount: won.get(c.id)?.count ?? 0,
     wonValue: won.get(c.id)?.value ?? 0,
   }));
@@ -120,9 +137,24 @@ export async function buildReport(db: Db, shop: Shop, period: Period, now = new 
   return {
     period,
     targetMinutes: shop.slaTargetMinutes,
-    totals: summarize([...turnsByChannel.values()].flat(), period, targetMs, clock, now),
+    totals: summary([...byChannel.values()].flat()),
     agents,
     waiting,
     pipeline,
   };
+}
+
+/**
+ * Marking a chat tuntas also handles the customer's last message: a "makasih" that the agent closes
+ * without replying shouldn't count as an overdue reply. The resolution time stands in for the reply.
+ */
+function handledByResolution(turns: Turn[], resolutions: Date[], clock: ShopClock): Turn[] {
+  const last = turns.at(-1);
+  if (!last || last.repliedAt !== null) return turns;
+  const closedAt = resolutions.find((r) => r >= last.waitingSince);
+  if (!closedAt) return turns;
+  return [
+    ...turns.slice(0, -1),
+    { ...last, repliedAt: closedAt, responseMs: businessMs(last.waitingSince, closedAt, clock) },
+  ];
 }

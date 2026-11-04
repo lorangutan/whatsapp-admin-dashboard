@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { businessMs, localDayStart, MINUTE, type ShopClock } from './businessHours.js';
 import { buildTurns } from './turns.js';
 import { summarize } from './summary.js';
+import { resolutionSummary } from './resolution.js';
 
 // WIB, Mon–Sat 08:00–17:00. 2026-11-02 is a Monday.
 const clock: ShopClock = {
@@ -110,4 +111,29 @@ test('summarize separates within-target, late, overdue and still-waiting turns',
   assert.equal(s.waiting, 1);
   assert.equal(s.slaPct, 33);
   assert.equal(s.medianResponseMs, Math.round(22.5 * MINUTE));
+});
+
+test('resolution: tuntas within the conversation counts, opening hours only; later ones go to the next conversation', () => {
+  const chat = (msgs: ReturnType<typeof msg>[], resolutions: string[]) => ({
+    turns: buildTurns(msgs, clock),
+    resolutions: resolutions.map(wib),
+  });
+  const chats = [
+    // asked Monday 10:00, solved 10:45 → 45 business minutes
+    chat([msg(false, '2026-11-02T10:00'), msg(true, '2026-11-02T10:05')], ['2026-11-02T10:45']),
+    // asked Monday 16:30, solved Tuesday 08:30 → 30 + 30 = 60 business minutes
+    chat([msg(false, '2026-11-02T16:30'), msg(true, '2026-11-02T16:40')], ['2026-11-03T08:30']),
+    // never solved
+    chat([msg(false, '2026-11-02T11:00'), msg(true, '2026-11-02T11:02')], []),
+    // two conversations two days apart; the only resolution belongs to the second one
+    chat(
+      [msg(false, '2026-11-02T09:00'), msg(true, '2026-11-02T09:01'), msg(false, '2026-11-04T09:00'), msg(true, '2026-11-04T09:01')],
+      ['2026-11-04T09:20'],
+    ),
+  ];
+  const r = resolutionSummary(chats, { from: wib('2026-11-02T00:00'), to: wib('2026-11-05T00:00') }, clock);
+  assert.equal(r.conversations, 5);
+  assert.equal(r.resolved, 3);
+  assert.equal(r.resolutionPct, 60);
+  assert.equal(r.medianResolutionMs, 45 * MINUTE);
 });

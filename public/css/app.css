@@ -530,6 +530,23 @@ tr:last-child td { border-bottom: 0; }
 .deal .val { font-weight: 600; color: var(--accent-text); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .deal .row { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 
+/* counters inside filter chips */
+.chip-n {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 3px;
+  border-radius: 999px; background: var(--panel); color: var(--text); font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.chip.active .chip-n { background: var(--accent); color: #fff; }
+.chip-n.bad, .chip.active .chip-n.bad { background: var(--danger); color: #fff; }
+
+/* "tuntas" toggle in the chat header */
+.resolve-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+button.pill.resolve-btn { padding: 5px 11px; font-size: 12.5px; }
+@media (max-width: 760px) {
+  .hide-sm { display: none; }
+  .resolve-btn { padding: 7px; }
+}
+
 /* stage tabs: phones only (desktop sees several columns at once) */
 .stage-tabs { display: none; }
 .stage-tab {

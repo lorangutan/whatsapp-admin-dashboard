@@ -310,6 +310,9 @@ export interface ChatListItem {
   /** Customer messages since the last reply that nobody has opened in the dashboard yet. */
   unread: number;
   nextFollowupAt: Date | null;
+  /** Marked tuntas (solved) and the customer hasn't written since. */
+  resolved: boolean;
+  resolvedAt: Date | null;
 }
 
 export interface ChatFilter {
@@ -320,6 +323,8 @@ export interface ChatFilter {
   stage?: string;
   /** Only chats whose last message is from the customer. */
   unreplied?: boolean;
+  /** Only chats not marked tuntas (or reopened by a newer customer message). */
+  unresolved?: boolean;
   /** Cursor for infinite scroll: chats last active before this instant. */
   before?: Date;
   limit?: number;
@@ -348,6 +353,7 @@ export async function listChats(db: Db, shopId: number, f: ChatFilter = {}): Pro
     params.push(f.stage);
   }
   if (f.unreplied) where.push('c.last_from_me = 0');
+  if (f.unresolved) where.push(`NOT EXISTS (SELECT 1 FROM resolutions r WHERE ${STANDING})`);
   if (f.before) {
     where.push('c.last_message_at < ?');
     params.push(f.before);
@@ -357,7 +363,8 @@ export async function listChats(db: Db, shopId: number, f: ChatFilter = {}): Pro
             c.remote_jid AS remoteJid, c.contact_name AS contactName, c.last_message_at AS lastMessageAt,
             c.last_body AS lastBody, c.last_from_me AS lastFromMe, c.last_kind AS lastKind,
             c.stage, c.stage_changed_at AS stageChangedAt, c.deal_value AS dealValue, c.interest, c.tags, c.unread,
-            (SELECT MIN(f.due_at) FROM followups f WHERE f.chat_id = c.id AND f.done_at IS NULL) AS nextFollowupAt
+            (SELECT MIN(f.due_at) FROM followups f WHERE f.chat_id = c.id AND f.done_at IS NULL) AS nextFollowupAt,
+            (SELECT MAX(r.resolved_at) FROM resolutions r WHERE ${STANDING}) AS resolvedAt
        FROM chats c
        JOIN channels ch ON ch.id = c.channel_id
       WHERE ${where.join(' AND ')}
@@ -368,8 +375,45 @@ export async function listChats(db: Db, shopId: number, f: ChatFilter = {}): Pro
   for (const r of rows) {
     r.tags = json<string[] | null>(r.tags) ?? [];
     r.dealValue = r.dealValue == null ? null : Number(r.dealValue);
+    r.resolved = r.resolvedAt != null;
   }
   return rows;
+}
+
+/**
+ * Condition on `resolutions r` for chat `c`: the resolutions that still stand, i.e. newer than the
+ * customer's latest message. A customer writing again after "tuntas" reopens the chat by itself.
+ */
+const STANDING = `r.chat_id = c.id AND r.resolved_at >= COALESCE(
+  (SELECT MAX(m.sent_at) FROM messages m WHERE m.chat_id = c.id AND m.from_me = 0), '1970-01-01')`;
+
+/** Marks the chat tuntas now, unless it already is. */
+export async function resolveChat(db: Db, chatId: number) {
+  await db.run(
+    `INSERT INTO resolutions (chat_id, resolved_at)
+     SELECT c.id, UTC_TIMESTAMP(3) FROM chats c WHERE c.id = ? AND NOT EXISTS (SELECT 1 FROM resolutions r WHERE ${STANDING})`,
+    [chatId],
+  );
+}
+
+/** Undo "tuntas": removes the resolutions that currently stand; older history stays. */
+export async function reopenChat(db: Db, chatId: number) {
+  await db.run(
+    `DELETE FROM resolutions WHERE chat_id = ? AND resolved_at >= COALESCE(
+       (SELECT MAX(sent_at) FROM messages WHERE chat_id = ? AND from_me = 0), '1970-01-01')`,
+    [chatId, chatId],
+  );
+}
+
+/** Every resolution in the shop since `since`, for the resolution metrics. */
+export function loadResolutions(db: Db, shopId: number, since: Date) {
+  return db.query<{ chatId: number; resolvedAt: Date }>(
+    `SELECT r.chat_id AS chatId, r.resolved_at AS resolvedAt
+       FROM resolutions r JOIN chats c ON c.id = r.chat_id JOIN channels ch ON ch.id = c.channel_id
+      WHERE ch.shop_id = ? AND r.resolved_at >= ?
+      ORDER BY r.chat_id, r.resolved_at`,
+    [shopId, since],
+  );
 }
 
 export async function getChat(db: Db, shopId: number, id: number): Promise<ChatListItem | undefined> {

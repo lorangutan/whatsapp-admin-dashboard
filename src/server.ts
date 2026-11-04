@@ -145,7 +145,9 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   // ---- chats & leads
   app.get<{
-    Querystring: { channelId?: string; q?: string; stage?: string; unreplied?: string; before?: string; limit?: string };
+    Querystring: {
+      channelId?: string; q?: string; stage?: string; unreplied?: string; unresolved?: string; before?: string; limit?: string;
+    };
   }>('/api/chats', async (req) => {
     const q = req.query;
     return repo.listChats(db, req.session.shopId, {
@@ -153,6 +155,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
       q: q.q || undefined,
       stage: q.stage || undefined,
       unreplied: q.unreplied === '1',
+      unresolved: q.unresolved === '1',
       before: q.before ? new Date(q.before) : undefined,
       limit: q.limit ? Math.min(Number(q.limit), 500) : undefined,
     });
@@ -172,6 +175,24 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
   app.patch<IdParams & { Body: repo.LeadPatch }>('/api/chats/:id', async (req) => {
     const id = await own(req, 'chat', Number(req.params.id));
     await repo.updateLead(db, id, req.body ?? {});
+    // Reaching Deal or Batal settles the conversation, so it counts as tuntas too.
+    const stage = req.body?.stage;
+    if (stage && (await shopOf(req)).pipelineStages.find((s) => s.id === stage)?.outcome) await repo.resolveChat(db, id);
+    bus.publish({ shopId: req.session.shopId, type: 'chat', chatId: id });
+    return repo.getChat(db, req.session.shopId, id);
+  });
+
+  // "Tuntas": the customer's problem is solved. A new message from the customer reopens it by itself.
+  app.post<IdParams>('/api/chats/:id/resolve', async (req) => {
+    const id = await own(req, 'chat', Number(req.params.id));
+    await repo.resolveChat(db, id);
+    bus.publish({ shopId: req.session.shopId, type: 'chat', chatId: id });
+    return repo.getChat(db, req.session.shopId, id);
+  });
+
+  app.delete<IdParams>('/api/chats/:id/resolve', async (req) => {
+    const id = await own(req, 'chat', Number(req.params.id));
+    await repo.reopenChat(db, id);
     bus.publish({ shopId: req.session.shopId, type: 'chat', chatId: id });
     return repo.getChat(db, req.session.shopId, id);
   });
