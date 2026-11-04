@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { ChannelManager } from '../channels/manager.js';
 import type { Db } from '../db/index.js';
-import { getShop, type Shop } from '../db/repo.js';
+import { getShop, listShopIds, type Shop } from '../db/repo.js';
 import { localDayStart, toLocalWallClock } from '../sla/businessHours.js';
 import { buildReport, shopClock, type Report } from './service.js';
 
@@ -59,29 +59,31 @@ export function formatDailyReport(shop: Shop, report: Report): string {
   return lines.join('\n');
 }
 
-export async function sendDailyReport(db: Db, channels: ChannelManager, now = new Date()) {
-  const shop = await getShop(db);
-  if (!shop.ownerWa) throw new Error('owner WhatsApp number is not set');
+export async function sendDailyReport(db: Db, channels: ChannelManager, shopId: number, now = new Date()) {
+  const shop = await getShop(db, shopId);
+  if (!shop.ownerWa) throw new Error('Nomor WA owner belum diisi');
   const from = localDayStart(now, shopClock(shop));
   const report = await buildReport(db, shop, { from, to: new Date(from.getTime() + 86_400_000) }, now);
-  await channels.sendFromAny(shop.ownerWa, formatDailyReport(shop, report));
+  await channels.sendFromAny(shop.id, shop.ownerWa, formatDailyReport(shop, report));
 }
 
-/** Checks once a minute whether it's the shop's report time. */
+/** Checks once a minute, for every shop, whether it's that shop's report time. */
 export function scheduleDailyReport(db: Db, channels: ChannelManager, log: FastifyBaseLogger) {
-  let lastSentDay = '';
+  const lastSentDay = new Map<number, string>();
   return setInterval(async () => {
-    try {
-      const shop = await getShop(db);
-      if (!shop.reportTime || !shop.ownerWa) return;
-      const local = toLocalWallClock(new Date(), shopClock(shop)).toISOString(); // YYYY-MM-DDTHH:MM
-      const day = local.slice(0, 10);
-      if (local.slice(11, 16) !== shop.reportTime || lastSentDay === day) return;
-      lastSentDay = day;
-      await sendDailyReport(db, channels);
-      log.info('daily report sent');
-    } catch (err) {
-      log.error({ err }, 'daily report failed');
+    for (const shopId of await listShopIds(db).catch(() => [])) {
+      try {
+        const shop = await getShop(db, shopId);
+        if (!shop.reportTime || !shop.ownerWa) continue;
+        const local = toLocalWallClock(new Date(), shopClock(shop)).toISOString(); // YYYY-MM-DDTHH:MM
+        const day = local.slice(0, 10);
+        if (local.slice(11, 16) !== shop.reportTime || lastSentDay.get(shopId) === day) continue;
+        lastSentDay.set(shopId, day);
+        await sendDailyReport(db, channels, shopId);
+        log.info({ shopId }, 'daily report sent');
+      } catch (err) {
+        log.error({ err, shopId }, 'daily report failed');
+      }
     }
   }, 60_000);
 }

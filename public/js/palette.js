@@ -1,6 +1,7 @@
 // Ctrl/Cmd+K command palette: jump to views, run actions, search chats.
 import { api, $, $$, esc, icon, avatar, listTime, chatName, debounce, displayPhone, THEMES, setThemePref } from './lib.js';
 import { stageName } from './store.js';
+import { t, getLang, setLang, LANGS } from './i18n.js';
 
 let backdrop = null;
 
@@ -14,19 +15,25 @@ export function closePalette() {
 export function openPalette(navigate) {
   if (backdrop) return closePalette();
   const commands = [
-    { label: 'Inbox', icon: 'chat', run: () => navigate('#/inbox'), kw: 'chat pesan' },
-    { label: 'Chat belum dibalas', icon: 'clock', run: () => setInbox('unreplied'), kw: 'unreplied waiting menunggu' },
-    { label: 'Pipeline', icon: 'board', run: () => navigate('#/pipeline'), kw: 'kanban deal lead' },
-    { label: 'Follow-up', icon: 'clock', run: () => navigate('#/followups'), kw: 'reminder pengingat tugas' },
-    { label: 'Laporan', icon: 'chart', run: () => navigate('#/reports'), kw: 'sla report statistik' },
-    { label: 'Nomor WhatsApp', icon: 'phone', run: () => navigate('#/numbers'), kw: 'qr hubungkan sales' },
-    { label: 'Pengaturan', icon: 'sliders', run: () => navigate('#/settings'), kw: 'jam buka balasan cepat' },
-    { label: 'Keluar', icon: 'back', run: () => window.dispatchEvent(new Event('wamon-logout')), kw: 'logout sign out' },
-    ...THEMES.map((t) => ({
-      label: `Tema: ${t.label}`,
-      icon: t.icon,
-      run: () => setThemePref(t.id),
-      kw: `theme tampilan mode ${t.id} ${t.id === 'dark' ? 'gelap malam' : t.id === 'light' ? 'terang lite siang' : 'otomatis'}`,
+    { label: t('Inbox'), icon: 'chat', run: () => navigate('#/inbox'), kw: 'chat pesan' },
+    { label: t('Chat belum dibalas'), icon: 'clock', run: () => setInbox('unreplied'), kw: 'unreplied waiting menunggu' },
+    { label: t('Pipeline'), icon: 'board', run: () => navigate('#/pipeline'), kw: 'kanban deal lead' },
+    { label: t('Follow-up'), icon: 'clock', run: () => navigate('#/followups'), kw: 'reminder pengingat tugas' },
+    { label: t('Laporan'), icon: 'chart', run: () => navigate('#/reports'), kw: 'sla report statistik' },
+    { label: t('Nomor WhatsApp'), icon: 'phone', run: () => navigate('#/numbers'), kw: 'qr hubungkan sales' },
+    { label: t('Pengaturan'), icon: 'sliders', run: () => navigate('#/settings'), kw: 'jam buka balasan cepat' },
+    { label: t('Keluar'), icon: 'back', run: () => window.dispatchEvent(new Event('wamon-logout')), kw: 'logout sign out' },
+    ...THEMES.map((th) => ({
+      label: `${t('Tema')}: ${th.label}`,
+      icon: th.icon,
+      run: () => setThemePref(th.id),
+      kw: `theme tampilan mode ${th.id} ${th.id === 'dark' ? 'gelap malam' : th.id === 'light' ? 'terang lite siang' : 'otomatis'}`,
+    })),
+    ...LANGS.filter((l) => l.id !== getLang()).map((l) => ({
+      label: `${t('Bahasa')}: ${l.label}`,
+      icon: 'chat',
+      run: () => setLang(l.id),
+      kw: 'language bahasa english indonesia',
     })),
   ];
   function setInbox(mode) {
@@ -39,10 +46,10 @@ export function openPalette(navigate) {
 
   backdrop = document.createElement('div');
   backdrop.className = 'palette-backdrop';
-  backdrop.innerHTML = `<div class="palette" role="dialog" aria-label="Cari">
-    <div class="q">${icon('search', 19)}<input id="pal-q" placeholder="Cari chat, nomor, atau perintah…" autocomplete="off"><kbd>Esc</kbd></div>
+  backdrop.innerHTML = `<div class="palette" role="dialog" aria-label="${t('Cari')}">
+    <div class="q">${icon('search', 19)}<input id="pal-q" placeholder="${t('Cari chat, nomor, atau perintah…')}" autocomplete="off"><kbd>Esc</kbd></div>
     <div class="res" id="pal-res"></div>
-    <div class="foot"><span><kbd>↑</kbd><kbd>↓</kbd> pilih</span><span><kbd>Enter</kbd> buka</span><span><kbd>Esc</kbd> tutup</span></div>
+    <div class="foot"><span><kbd>↑</kbd><kbd>↓</kbd> ${t('pilih')}</span><span><kbd>Enter</kbd> ${t('buka')}</span><span><kbd>Esc</kbd> ${t('tutup')}</span></div>
   </div>`;
   document.body.append(backdrop);
   backdrop.addEventListener('pointerdown', (e) => e.target === backdrop && closePalette());
@@ -93,16 +100,16 @@ export function openPalette(navigate) {
     sel = Math.min(sel, Math.max(options.length - 1, 0));
     let html = '';
     if (cmds.length) {
-      html += `<div class="grp">Perintah</div>`;
+      html += `<div class="grp">${t('Perintah')}</div>`;
       html += cmds.map((c, i) => `<div class="opt" data-i="${i}">${icon(c.icon, 18)}<span>${esc(c.label)}</span></div>`).join('');
     }
     if (chats.length) {
-      html += `<div class="grp">${q ? 'Chat' : 'Chat terbaru'}</div>`;
+      html += `<div class="grp">${q ? t('Chat') : t('Chat terbaru')}</div>`;
       html += chats.map((c, j) => `<div class="opt" data-i="${cmds.length + j}">${avatar(chatName(c), 'xs')}
         <span>${esc(chatName(c))} <span class="faint small">${esc(c.contactName ? displayPhone(c.remoteJid) : '')}</span></span>
         <span class="meta">${esc([stageName(c.stage), c.agentName, listTime(c.lastMessageAt)].filter(Boolean).join(' · '))}</span></div>`).join('');
     }
-    res.innerHTML = html || `<div class="muted" style="padding:18px;text-align:center">Tidak ada hasil untuk “${esc(input.value)}”</div>`;
+    res.innerHTML = html || `<div class="muted" style="padding:18px;text-align:center">${t('Tidak ada hasil untuk “{q}”', { q: esc(input.value) })}</div>`;
     for (const o of $$('.opt', res)) {
       o.onclick = () => choose(Number(o.dataset.i));
       o.onmousemove = () => {

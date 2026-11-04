@@ -1,11 +1,15 @@
 import { EventEmitter } from 'node:events';
 
-/** What changed, pushed to open dashboards over Server-Sent Events so they update without polling. */
-export type LiveEvent =
+/**
+ * What changed, pushed to open dashboards over Server-Sent Events so they update without polling.
+ * Every event names its shop; each dashboard only receives its own shop's events.
+ */
+export type LiveEvent = { shopId: number } & (
   | { type: 'messages'; chatIds: number[] }
   | { type: 'chat'; chatId: number }
   | { type: 'channel'; channelId: number; status: string }
-  | { type: 'followups' };
+  | { type: 'followups' }
+);
 
 class Bus extends EventEmitter {
   publish(event: LiveEvent) {

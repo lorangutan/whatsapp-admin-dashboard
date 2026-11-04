@@ -127,5 +127,21 @@ CREATE TABLE IF NOT EXISTS quick_replies (
   shortcut VARCHAR(40) NOT NULL,
   body     TEXT NOT NULL,
   UNIQUE KEY uq_quick_replies (shop_id, shortcut)
+);
+
+-- Dashboard accounts. Each belongs to one shop and only ever sees that shop's data.
+-- The owner login from ADMIN_PASSWORD is not stored here (it always belongs to the first shop).
+-- Note: statements are split on semicolons, so comments in this file must not contain one.
+CREATE TABLE IF NOT EXISTS users (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  shop_id       INT NOT NULL,
+  username      VARCHAR(60) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role          VARCHAR(20) NOT NULL DEFAULT 'owner',
+  created_at    DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_users_username (username)
 )
 `;
+
+/** owner: everything in their shop. demo: explore freely, but no WhatsApp linking, sending or settings. */
+export type Role = 'owner' | 'demo';

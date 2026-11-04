@@ -1,9 +1,10 @@
 // App shell: icon rail, hash router, live events, global keyboard shortcuts.
 import {
-  $, $$, icon, liveEvents, toast, menuOpen, closeMenu, showMenu, api, applyTheme, getThemePref, setThemePref, THEMES,
+  $, $$, esc, icon, liveEvents, toast, menuOpen, closeMenu, showMenu, api, applyTheme, getThemePref, setThemePref, THEMES,
   withTransition,
 } from './lib.js';
 import { store, loadBase, refreshChannels } from './store.js';
+import { t, getLang, setLang, LANGS } from './i18n.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
 import { mountInbox } from './inbox.js';
 import { mountFollowups } from './followups.js';
@@ -70,26 +71,30 @@ function moveIndicator() {
 }
 
 function themeIcon() {
-  return THEMES.find((t) => t.id === getThemePref())?.icon ?? 'monitor';
+  return THEMES.find((th) => th.id === getThemePref())?.icon ?? 'monitor';
 }
 
 function renderRail() {
   $('#rail').innerHTML = `
     <div class="rail-indicator" id="rail-indicator"></div>
-    <div class="logo" title="${store.shop.name}">${icon('chat', 21)}</div>
-    ${Object.entries(VIEWS).map(([k, v]) => `<button class="rail-btn" data-view="${k}" data-tip="${v.label}" aria-label="${v.label}">
+    <div class="logo" title="${esc(store.shop.name)}">${icon('chat', 21)}</div>
+    ${store.session?.role === 'demo' ? `<div class="demo-badge" title="${t('Akun demo')}">DEMO</div>` : ''}
+    ${Object.entries(VIEWS).map(([k, v]) => `<button class="rail-btn" data-view="${k}" data-tip="${t(v.label)}" aria-label="${t(v.label)}">
       ${icon(v.icon, 22)}${k === 'followups' ? '<span class="badge danger hidden" id="due-badge"></span>' : ''}
       ${k === 'numbers' ? '<span class="badge warn hidden" id="offline-badge">!</span>' : ''}</button>`).join('')}
     <div class="spacer"></div>
-    <button class="rail-btn cmdk" id="open-palette" data-tip="Cari (Ctrl K)" aria-label="Cari">${icon('search', 21)}</button>
-    <button class="rail-btn cmdk" id="theme-btn" data-tip="Tema" aria-label="Tema">${icon(themeIcon(), 21)}</button>`;
+    <button class="rail-btn cmdk" id="open-palette" data-tip="${t('Cari')} (Ctrl K)" aria-label="${t('Cari')}">${icon('search', 21)}</button>
+    <button class="rail-btn cmdk" id="theme-btn" data-tip="${t('Tema')}" aria-label="${t('Tema')}">${icon(themeIcon(), 21)}</button>`;
   for (const b of $$('.rail-btn[data-view]')) b.onclick = () => navigate(`#/${b.dataset.view}`);
   $('#open-palette').onclick = () => openPalette(navigate);
   $('#theme-btn').onclick = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     showMenu(r.right + 8, r.top - 110, [
-      { section: 'Tema' },
-      ...THEMES.map((t) => ({ label: t.label, icon: t.icon, current: getThemePref() === t.id, onClick: () => setThemePref(t.id) })),
+      { section: t('Tema') },
+      ...THEMES.map((th) => ({ label: th.label, icon: th.icon, current: getThemePref() === th.id, onClick: () => setThemePref(th.id) })),
+      'sep',
+      { section: t('Bahasa') },
+      ...LANGS.map((l) => ({ label: l.label, current: getLang() === l.id, onClick: () => setLang(l.id) })),
     ]);
   };
   addEventListener('themechange', () => {
@@ -130,28 +135,37 @@ function onKey(e) {
   current.view?.onKey?.(e);
 }
 
-/** Full-screen password prompt; resolves once the session cookie is set. */
+/** Full-screen login with a language switch; resolves once the session cookie is set. */
 function showLogin() {
   return new Promise((resolve) => {
     const el = document.createElement('div');
     el.className = 'login';
     el.innerHTML = `<form class="login-card" autocomplete="on">
+      <div class="segmented login-lang" role="radiogroup" aria-label="${t('Bahasa')}">
+        ${LANGS.map((l) => `<button type="button" role="radio" data-lang="${l.id}" class="${getLang() === l.id ? 'active' : ''}">${l.short}</button>`).join('')}
+      </div>
       <div class="logo">${icon('chat', 26)}</div>
       <h1>Wamon</h1>
-      <p class="muted">Masuk untuk melihat chat dan laporan</p>
-      <input class="input" type="password" name="password" placeholder="Password" autocomplete="current-password" required autofocus>
+      <p class="muted">${t('Masuk untuk melihat chat dan laporan')}</p>
+      <input class="input" name="username" placeholder="${t('Username')}" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <input class="input" type="password" name="password" placeholder="${t('Password')}" autocomplete="current-password" required>
       <div class="login-error bad small" role="alert"></div>
-      <button class="btn" type="submit">Masuk</button>
+      <button class="btn" type="submit">${t('Masuk')}</button>
+      <p class="faint small">${t('Coba dulu? Masuk dengan {cred}', { cred: '<b>demo</b> / <b>demo</b>' })}</p>
     </form>`;
     document.body.append(el);
     const form = $('form', el);
-    form.password.focus();
+    for (const b of $$('[data-lang]', el)) b.onclick = () => setLang(b.dataset.lang);
+    form.username.focus();
     form.onsubmit = async (e) => {
       e.preventDefault();
-      const btn = $('button', form);
+      const btn = $('button[type=submit]', form);
       btn.disabled = true;
       try {
-        await api('/api/login', { method: 'POST', body: { password: form.password.value } });
+        await api('/api/login', {
+          method: 'POST',
+          body: { username: form.username.value.trim(), password: form.password.value },
+        });
         el.classList.add('leaving');
         setTimeout(() => el.remove(), 250);
         resolve();
@@ -176,14 +190,20 @@ export async function logout() {
 async function start() {
   applyTheme();
   try {
-    const session = await api('/api/session');
-    if (session.required && !session.loggedIn) await showLogin();
+    let session = await api('/api/session');
+    if (session.required && !session.loggedIn) {
+      await showLogin();
+      session = await api('/api/session');
+    }
+    store.session = session;
+    // Owner-only controls (linking numbers, settings, sending) are hidden for the demo account.
+    document.body.classList.toggle('role-demo', session.role === 'demo');
     // A session that expires mid-use sends the user back to the login screen.
     addEventListener('auth-required', () => location.reload(), { once: true });
     addEventListener('wamon-logout', logout);
     await loadBase();
   } catch (err) {
-    main.innerHTML = `<div class="empty"><div class="inner"><div class="ttl">Server tidak bisa dihubungi</div><div class="txt">${err.message}</div></div></div>`;
+    main.innerHTML = `<div class="empty"><div class="inner"><div class="ttl">${t('Server tidak bisa dihubungi')}</div><div class="txt">${err.message}</div></div></div>`;
     return;
   }
   document.title = `${store.shop.name} · Wamon`;
@@ -201,9 +221,9 @@ async function start() {
       if (e.type === 'channel' || e.type === 'followups') refreshBadges();
     },
     (up) => {
-      if (!up && !wasDown) toast('Koneksi ke server terputus, mencoba lagi…', { error: true });
+      if (!up && !wasDown) toast(t('Koneksi ke server terputus, mencoba lagi…'), { error: true });
       if (up && wasDown) {
-        toast('Tersambung lagi');
+        toast(t('Tersambung lagi'));
         refreshChannels();
         current.view?.onLive?.({ type: 'messages', chatIds: [] });
       }

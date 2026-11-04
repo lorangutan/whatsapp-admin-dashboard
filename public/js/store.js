@@ -1,8 +1,11 @@
 // Shared app state and lead actions used by several views.
 import { api, toast, copy, phoneOf } from './lib.js';
+import { t } from './i18n.js';
 
 export const store = {
   shop: null,
+  /** { username, role, shopName } of the logged-in account. */
+  session: null,
   channels: [],
   quickReplies: [],
   /** Notifies views that a chat changed locally (optimistic) or on the server. */
@@ -11,7 +14,7 @@ export const store = {
 
 export const stages = () => store.shop?.pipelineStages ?? [];
 export const stageById = (id) => stages().find((s) => s.id === id);
-export const stageName = (id) => (id === 'none' ? 'Bukan lead' : stageById(id)?.name ?? '');
+export const stageName = (id) => (id === 'none' ? t('Bukan lead') : t(stageById(id)?.name ?? ''));
 export const stageClass = (id) => {
   const o = stageById(id)?.outcome;
   return o === 'won' ? 'won' : o === 'lost' ? 'lost' : 'stage';
@@ -51,7 +54,7 @@ export async function patchLead(chat, patch, revert) {
     Object.assign(chat, before);
     emitChat(chat);
     revert?.();
-    toast(`Gagal menyimpan: ${err.message}`, { error: true });
+    toast(t('Gagal menyimpan: {e}', { e: err.message }), { error: true });
   }
 }
 
@@ -59,8 +62,8 @@ export function moveStage(chat, stage) {
   const prev = chat.stage;
   if (prev === stage) return;
   patchLead(chat, { stage });
-  toast(`${chat.contactName ?? phoneOf(chat.remoteJid)} → ${stageName(stage) || 'tanpa tahap'}`, {
-    action: 'Urungkan',
+  toast(`${chat.contactName ?? phoneOf(chat.remoteJid)} → ${stageName(stage) || t('tanpa tahap')}`, {
+    action: t('Urungkan'),
     onAction: () => patchLead(chat, { stage: prev }),
   });
 }
@@ -77,7 +80,7 @@ export async function addFollowup(chat, dueAt, note = '') {
     await api(`/api/chats/${chat.id}/followups`, { method: 'POST', body: { dueAt: dueAt.toISOString(), note } });
     if (!chat.nextFollowupAt || new Date(chat.nextFollowupAt) > dueAt) chat.nextFollowupAt = dueAt.toISOString();
     emitChat(chat);
-    toast('Follow-up dijadwalkan');
+    toast(t('Follow-up dijadwalkan'));
   } catch (err) {
     toast(err.message, { error: true });
   }
@@ -93,20 +96,20 @@ export async function markRead(chat) {
 /** Context-menu items shared by chat rows, pipeline cards and the conversation header. */
 export function leadMenu(chat, { onOpen } = {}) {
   return [
-    ...(onOpen ? [{ label: 'Buka chat', icon: 'chat', onClick: onOpen }, 'sep'] : []),
-    { section: 'Pindahkan ke tahap' },
+    ...(onOpen ? [{ label: t('Buka chat'), icon: 'chat', onClick: onOpen }, 'sep'] : []),
+    { section: t('Pindahkan ke tahap') },
     ...stages().map((s) => ({
-      label: s.name,
+      label: t(s.name),
       icon: s.outcome === 'won' ? 'money' : s.outcome === 'lost' ? 'ban' : 'arrow',
       current: chat.stage === s.id,
       onClick: () => moveStage(chat, s.id),
     })),
     'sep',
-    { label: 'Follow-up besok 09.00', icon: 'clock', onClick: () => addFollowup(chat, tomorrowAt()) },
-    ...(chat.unread ? [{ label: 'Tandai sudah dibaca', icon: 'eye', onClick: () => markRead(chat) }] : []),
-    { label: 'Salin nomor', icon: 'copy', onClick: () => copy(phoneOf(chat.remoteJid)) },
+    { label: t('Follow-up besok 09.00'), icon: 'clock', onClick: () => addFollowup(chat, tomorrowAt()) },
+    ...(chat.unread ? [{ label: t('Tandai sudah dibaca'), icon: 'eye', onClick: () => markRead(chat) }] : []),
+    { label: t('Salin nomor'), icon: 'copy', onClick: () => copy(phoneOf(chat.remoteJid)) },
     chat.stage === 'none'
-      ? { label: 'Jadikan lead', icon: 'plus', onClick: () => moveStage(chat, 'new') }
-      : { label: 'Bukan lead', icon: 'ban', danger: true, onClick: () => moveStage(chat, 'none') },
+      ? { label: t('Jadikan lead'), icon: 'plus', onClick: () => moveStage(chat, 'new') }
+      : { label: t('Bukan lead'), icon: 'ban', danger: true, onClick: () => moveStage(chat, 'none') },
   ];
 }

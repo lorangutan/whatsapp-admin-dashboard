@@ -1,13 +1,19 @@
-// Fills the database with fake chats for 3 sales agents, so the dashboard can be explored
-// without linking a real phone. Run: npm run seed
+// Creates a separate "Demo Bengkel" shop with fake chats for 3 sales agents and CRM data, plus a
+// "demo" login (password "demo", demo role) that can only see that shop. Safe to re-run.
+// Run: npm run seed
 import { openDb } from './db/index.js';
 import {
-  addFollowup, addNote, createChannel, getShop, listChannels, saveMessages, setChannelStatus, updateLead,
+  addFollowup, addNote, createChannel, ensureShop, listChannels, saveMessages, setChannelStatus, updateLead, upsertUser,
 } from './db/repo.js';
+import { defaultBusinessHours, defaultQuickReplies, defaultStages } from './db/schema.js';
+import { hashPassword } from './auth.js';
 import type { InboundMessage } from './channels/types.js';
 
+const DEMO_SHOP = 'Demo Bengkel';
 const db = await openDb();
-const shop = await getShop(db);
+const shop = { id: await ensureShop(db, DEMO_SHOP, { businessHours: defaultBusinessHours, stages: defaultStages, quickReplies: defaultQuickReplies }) };
+await upsertUser(db, 'demo', hashPassword('demo'), shop.id, 'demo');
+console.log(`Demo shop #${shop.id}, login demo / demo`);
 
 const customers = ['Pak Rudi', 'Mas Dimas', 'Bu Sari', 'Agus', 'Rizky', 'Hendra', 'Yoga', 'Fajar', 'Dewi', 'Bayu'];
 const asks = [
@@ -31,6 +37,14 @@ const agents = [
 let rng = 42;
 const rand = () => ((rng = (rng * 16807) % 2147483647) / 2147483647);
 const pick = <T>(a: T[]) => a[Math.floor(rand() * a.length)];
+
+// Earlier versions seeded the fake agents into the owner's shop; move them (only the fake
+// 62812000… numbers, never a real agent with the same name) into the demo shop.
+const moved = await db.run(
+  "UPDATE channels SET shop_id = ? WHERE shop_id <> ? AND agent_name IN (?) AND phone LIKE '62812000%'",
+  [shop.id, shop.id, agents.map((a) => a.name)],
+);
+if (moved.affectedRows) console.log(`Moved ${moved.affectedRows} demo agents into ${DEMO_SHOP}`);
 
 const now = Date.now();
 const existing = await listChannels(db, shop.id);

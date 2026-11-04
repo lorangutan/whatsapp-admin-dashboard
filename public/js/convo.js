@@ -6,6 +6,7 @@ import {
 import {
   store, stages, stageName, stageClass, leadMenu, patchLead, markRead, emitChat, tomorrowAt,
 } from './store.js';
+import { t, locale } from './i18n.js';
 
 const PAGE = 80;
 
@@ -66,7 +67,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
       render();
       markRead(chat);
     } catch (err) {
-      host.innerHTML = empty({ ico: 'alert', title: 'Chat tidak bisa dibuka', text: esc(err.message) });
+      host.innerHTML = empty({ ico: 'alert', title: t('Chat tidak bisa dibuka'), text: esc(err.message) });
     }
   }
 
@@ -76,7 +77,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
       <div class="convo">
         <div class="convo-head" id="cv-head"></div>
         <div class="messages" id="cv-msgs" tabindex="-1"></div>
-        <button class="to-bottom" id="cv-down" aria-label="Ke pesan terbaru">${icon('down', 22)}</button>
+        <button class="to-bottom" id="cv-down" aria-label="${t('Ke pesan terbaru')}">${icon('down', 22)}</button>
         <div id="cv-compose"></div>
       </div>
       <aside class="lead-panel ${panelOpen ? '' : 'hidden'}" id="cv-panel"></aside>
@@ -115,7 +116,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
     const ch = channel();
     const online = ch?.status === 'connected';
     head.innerHTML = `
-      ${onBack ? `<button class="icon-btn only-mobile" id="cv-back" aria-label="Kembali">${icon('back')}</button>` : ''}
+      ${onBack ? `<button class="icon-btn only-mobile" id="cv-back" aria-label="${t('Kembali')}">${icon('back')}</button>` : ''}
       ${avatar(chatName(chat), 'sm')}
       <div class="who" id="cv-who">
         <div class="name">${esc(chatName(chat))}</div>
@@ -124,9 +125,9 @@ export function openConversation(host, chatId, { onBack } = {}) {
       </div>
       ${chat.stage && chat.stage !== 'none'
         ? `<button class="pill ${stageClass(chat.stage)}" id="cv-stage" style="border:0">${esc(stageName(chat.stage))} ▾</button>`
-        : `<button class="btn ghost sm" id="cv-stage">${icon('plus', 14)} Jadikan lead</button>`}
-      <button class="icon-btn" id="cv-fu" title="Jadwalkan follow-up">${icon('clock')}</button>
-      <button class="icon-btn ${panelOpen ? 'on' : ''}" id="cv-toggle" title="Detail lead">${icon('panel')}</button>`;
+        : `<button class="btn ghost sm" id="cv-stage">${icon('plus', 14)} ${t('Jadikan lead')}</button>`}
+      <button class="icon-btn" id="cv-fu" title="${t('Jadwalkan follow-up')}">${icon('clock')}</button>
+      <button class="icon-btn ${panelOpen ? 'on' : ''}" id="cv-toggle" title="${t('Detail lead')}">${icon('panel')}</button>`;
     $('#cv-back', head)?.addEventListener('click', onBack);
     $('#cv-who', head).onclick = () => togglePanel(true);
     $('#cv-toggle', head).onclick = () => togglePanel();
@@ -169,21 +170,21 @@ export function openConversation(host, chatId, { onBack } = {}) {
     };
     const later = new Date(Date.now() + 2 * 3600_000);
     return [
-      { section: 'Ingatkan follow-up' },
-      { label: `Nanti, ${clock(later)}`, icon: 'clock', onClick: () => createFollowup(later) },
-      { label: 'Besok 09.00', icon: 'clock', onClick: () => createFollowup(inDays(1)) },
-      { label: '3 hari lagi', icon: 'clock', onClick: () => createFollowup(inDays(3)) },
-      { label: 'Minggu depan', icon: 'clock', onClick: () => createFollowup(inDays(7)) },
+      { section: t('Ingatkan follow-up') },
+      { label: t('Nanti, {time}', { time: clock(later) }), icon: 'clock', onClick: () => createFollowup(later) },
+      { label: t('Besok 09.00'), icon: 'clock', onClick: () => createFollowup(inDays(1)) },
+      { label: t('3 hari lagi'), icon: 'clock', onClick: () => createFollowup(inDays(3)) },
+      { label: t('Minggu depan'), icon: 'clock', onClick: () => createFollowup(inDays(7)) },
       'sep',
-      { label: 'Pilih tanggal…', icon: 'plus', onClick: () => { togglePanel(true); $('#fu-date', host)?.focus(); } },
+      { label: t('Pilih tanggal…'), icon: 'plus', onClick: () => { togglePanel(true); $('#fu-date', host)?.focus(); } },
     ];
   }
 
   // ---------- messages ----------
   function messagesHtml() {
-    if (!msgs.length) return `<div class="empty"><div class="inner"><div class="txt">Belum ada pesan di chat ini</div></div></div>`;
+    if (!msgs.length) return `<div class="empty"><div class="inner"><div class="txt">${t('Belum ada pesan di chat ini')}</div></div></div>`;
     const target = (store.shop?.slaTargetMinutes ?? 15) * 60000;
-    let out = hasOlder ? `<button class="btn ghost sm load-older" id="cv-older">Muat pesan sebelumnya</button>` : '';
+    let out = hasOlder ? `<button class="btn ghost sm load-older" id="cv-older">${t('Muat pesan sebelumnya')}</button>` : '';
     let lastDay = '';
     let prevFromMe = null;
     let waitingSince = null;
@@ -198,7 +199,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
       if (!m.fromMe && waitingSince == null) waitingSince = new Date(m.sentAt);
       if (m.fromMe && waitingSince != null) {
         const gap = new Date(m.sentAt) - waitingSince;
-        if (gap >= 60000) out += `<div class="wait-sep ${gap <= target ? 'ok' : ''}">dibalas setelah ${dur(gap)}</div>`;
+        if (gap >= 60000) out += `<div class="wait-sep ${gap <= target ? 'ok' : ''}">${t('dibalas setelah {d}', { d: dur(gap) })}</div>`;
         waitingSince = null;
       }
       const body = m.body ? esc(m.body) : `<span class="kind">[${esc(m.kind)}]</span>`;
@@ -223,9 +224,9 @@ export function openConversation(host, chatId, { onBack } = {}) {
       onContext(b, (x, y) => {
         const m = msgs.find((mm) => mm.waId === b.dataset.id);
         showMenu(x, y, [
-          { label: 'Salin teks', icon: 'copy', onClick: () => copy(m?.body ?? '') },
-          ...(m?.failed ? [{ label: 'Kirim ulang', icon: 'refresh', onClick: () => retry(m) }] : []),
-          { label: 'Simpan sebagai catatan', icon: 'note', onClick: () => m?.body && addNote(m.body) },
+          { label: t('Salin teks'), icon: 'copy', onClick: () => copy(m?.body ?? '') },
+          ...(m?.failed ? [{ label: t('Kirim ulang'), icon: 'refresh', onClick: () => retry(m) }] : []),
+          { label: t('Simpan sebagai catatan'), icon: 'note', onClick: () => m?.body && addNote(m.body) },
         ]);
       });
     }
@@ -273,15 +274,19 @@ export function openConversation(host, chatId, { onBack } = {}) {
   function renderComposer() {
     const el = $('#cv-compose', host);
     const ch = channel();
+    if (store.session?.role === 'demo') {
+      el.innerHTML = `<div class="composer-note">${icon('eye', 17)}<span>${t('Mode demo: mengirim pesan WhatsApp dinonaktifkan.')}</span></div>`;
+      return;
+    }
     if (ch?.status !== 'connected') {
       el.innerHTML = `<div class="composer-note">${icon('wifi', 17)}
-        <span>Nomor <b>${esc(chat.agentName)}</b> tidak terhubung, jadi balasan belum bisa dikirim dari sini.</span>
-        <a href="#/numbers" style="margin-left:auto;color:inherit;font-weight:600">Hubungkan</a></div>`;
+        <span>${t('Nomor {name} tidak terhubung, jadi balasan belum bisa dikirim dari sini.', { name: `<b>${esc(chat.agentName)}</b>` })}</span>
+        <a href="#/numbers" style="margin-left:auto;color:inherit;font-weight:600">${t('Hubungkan')}</a></div>`;
       return;
     }
     el.innerHTML = `<div class="composer">
-      <textarea id="cv-text" rows="1" placeholder="Ketik pesan · / untuk balasan cepat"></textarea>
-      <button class="btn send" id="cv-send" aria-label="Kirim">${icon('send', 19)}</button>
+      <textarea id="cv-text" rows="1" placeholder="${t('Ketik pesan · / untuk balasan cepat')}"></textarea>
+      <button class="btn send" id="cv-send" aria-label="${t('Kirim')}">${icon('send', 19)}</button>
     </div>`;
     const ta = $('#cv-text', el);
     const sendBtn = $('#cv-send', el);
@@ -318,7 +323,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
       popSel = Math.min(popSel, Math.max(list.length - 1, 0));
       pop.innerHTML = list.length
         ? list.map((r, i) => `<div class="qr-item ${i === popSel ? 'sel' : ''}" data-i="${i}"><b>/${esc(r.shortcut)}</b><span>${esc(r.body)}</span></div>`).join('')
-        : `<div class="qr-item"><span>Belum ada balasan cepat “${esc(ta.value.slice(1))}”. Tambahkan di Pengaturan.</span></div>`;
+        : `<div class="qr-item"><span>${t('Belum ada balasan cepat “{q}”. Tambahkan di Pengaturan.', { q: esc(ta.value.slice(1)) })}</span></div>`;
       pop.onclick = (e) => {
         const it = e.target.closest('[data-i]');
         if (it) pick(list[Number(it.dataset.i)]);
@@ -380,7 +385,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
     } catch (err) {
       m.pending = false;
       m.failed = true;
-      toast(`Pesan gagal terkirim: ${err.message}`, { error: true, action: 'Coba lagi', onAction: () => retry(m) });
+      toast(t('Pesan gagal terkirim: {e}', { e: err.message }), { error: true, action: t('Coba lagi'), onAction: () => retry(m) });
     }
     renderMessages(true);
   }
@@ -399,54 +404,54 @@ export function openConversation(host, chatId, { onBack } = {}) {
     el.innerHTML = `
       <div class="sec hero">
         ${avatar(chatName(chat))}
-        <input class="input" id="lp-name" value="${esc(chat.contactName ?? '')}" placeholder="${esc(displayPhone(chat.remoteJid))}" aria-label="Nama kontak">
+        <input class="input" id="lp-name" value="${esc(chat.contactName ?? '')}" placeholder="${esc(displayPhone(chat.remoteJid))}" aria-label="${t('Nama kontak')}">
         <div class="muted small" style="display:flex;gap:6px;justify-content:center;align-items:center">
           ${esc(displayPhone(chat.remoteJid))}
-          <button class="icon-btn" id="lp-copy" style="width:26px;height:26px" title="Salin nomor">${icon('copy', 14)}</button>
+          <button class="icon-btn" id="lp-copy" style="width:26px;height:26px" title="${t('Salin nomor')}">${icon('copy', 14)}</button>
         </div>
-        <div class="small faint">Ditangani ${esc(chat.agentName)}</div>
+        <div class="small faint">${t('Ditangani {name}', { name: esc(chat.agentName) })}</div>
       </div>
       <div class="sec">
-        <h2>Tahap</h2>
+        <h2>${t('Tahap')}</h2>
         <div class="stage-track">
-          ${stages().map((s) => `<button data-stage="${s.id}" class="${chat.stage === s.id ? 'active' : ''} ${s.outcome ?? ''}">${esc(s.name)}</button>`).join('')}
-          <button data-stage="none" class="${chat.stage === 'none' ? 'active lost' : ''}">Bukan lead</button>
+          ${stages().map((s) => `<button data-stage="${s.id}" class="${chat.stage === s.id ? 'active' : ''} ${s.outcome ?? ''}">${esc(t(s.name))}</button>`).join('')}
+          <button data-stage="none" class="${chat.stage === 'none' ? 'active lost' : ''}">${t('Bukan lead')}</button>
         </div>
       </div>
       <div class="sec">
-        <h2>Detail</h2>
-        <label class="field">Unit diminati
-          <input class="input" id="lp-interest" value="${esc(chat.interest ?? '')}" placeholder="mis. Vario 125 2019 hitam"></label>
-        <label class="field">Nilai deal (Rp)
-          <input class="input num" id="lp-value" inputmode="numeric" value="${chat.dealValue ? Number(chat.dealValue).toLocaleString('id-ID') : ''}" placeholder="17.500.000"></label>
-        <label class="field">Tag
-          <div class="tags-input" id="lp-tags">${tags.map((t, i) => `<span class="t">${esc(t)}<button data-i="${i}" aria-label="Hapus tag">×</button></span>`).join('')}
-            <input placeholder="${tags.length ? '' : 'kredit, tukar tambah…'}" id="lp-tag-in"></div></label>
+        <h2>${t('Detail')}</h2>
+        <label class="field">${t('Unit diminati')}
+          <input class="input" id="lp-interest" value="${esc(chat.interest ?? '')}" placeholder="${t('mis. Vario 125 2019 hitam')}"></label>
+        <label class="field">${t('Nilai deal (Rp)')}
+          <input class="input num" id="lp-value" inputmode="numeric" value="${chat.dealValue ? Number(chat.dealValue).toLocaleString(locale()) : ''}" placeholder="17.500.000"></label>
+        <label class="field">${t('Tag')}
+          <div class="tags-input" id="lp-tags">${tags.map((tag, i) => `<span class="t">${esc(tag)}<button data-i="${i}" aria-label="${t('Hapus tag')}">×</button></span>`).join('')}
+            <input placeholder="${tags.length ? '' : t('kredit, tukar tambah…')}" id="lp-tag-in"></div></label>
       </div>
       <div class="sec">
-        <h2>Follow-up</h2>
+        <h2>${t('Follow-up')}</h2>
         <div id="lp-fus">${(chat.followups ?? []).map((f) => `
           <div class="fu-row ${f.doneAt ? 'done' : ''}">
             <input type="checkbox" data-fu="${f.id}" ${f.doneAt ? 'checked' : ''}>
             <div style="flex:1"><div class="${!f.doneAt && new Date(f.dueAt) < new Date() ? 'bad' : ''}">${esc(dueLabel(f.dueAt))}</div>
               ${f.note ? `<div class="muted small">${esc(f.note)}</div>` : ''}</div>
             <button class="icon-btn" data-fu-del="${f.id}" style="width:26px;height:26px">${icon('x', 14)}</button>
-          </div>`).join('') || '<div class="muted small">Belum ada follow-up</div>'}</div>
+          </div>`).join('') || `<div class="muted small">${t('Belum ada follow-up')}</div>`}</div>
         <div class="quick-dates">
-          <button class="btn ghost sm" data-in="1">Besok</button>
-          <button class="btn ghost sm" data-in="3">3 hari</button>
-          <button class="btn ghost sm" data-in="7">1 minggu</button>
+          <button class="btn ghost sm" data-in="1">${t('Besok')}</button>
+          <button class="btn ghost sm" data-in="3">${t('3 hari')}</button>
+          <button class="btn ghost sm" data-in="7">${t('1 minggu')}</button>
         </div>
         <div style="display:grid;gap:6px">
           <input type="datetime-local" class="input" id="fu-date">
-          <input class="input" id="fu-note" placeholder="Catatan, mis. kabari harga nett">
-          <button class="btn sm" id="fu-add">${icon('plus', 14)} Tambah follow-up</button>
+          <input class="input" id="fu-note" placeholder="${t('Catatan, mis. kabari harga nett')}">
+          <button class="btn sm" id="fu-add">${icon('plus', 14)} ${t('Tambah follow-up')}</button>
         </div>
       </div>
       <div class="sec">
-        <h2>Catatan</h2>
-        <textarea class="input" id="note-in" rows="2" placeholder="Catatan internal, tidak terkirim ke customer"></textarea>
-        <button class="btn ghost sm" id="note-add" style="justify-self:start">Simpan catatan</button>
+        <h2>${t('Catatan')}</h2>
+        <textarea class="input" id="note-in" rows="2" placeholder="${t('Catatan internal, tidak terkirim ke customer')}"></textarea>
+        <button class="btn ghost sm" id="note-add" style="justify-self:start">${t('Simpan catatan')}</button>
         <div style="display:grid;gap:6px" id="lp-notes">${(chat.notes ?? []).map((n) => `
           <div class="note-row"><div class="txt">${esc(n.body)}<div class="faint small">${esc(dayLabel(n.createdAt))} ${clock(n.createdAt)}</div></div>
             <button class="icon-btn" data-note-del="${n.id}" style="width:26px;height:26px">${icon('trash', 14)}</button></div>`).join('')}</div>
@@ -486,8 +491,8 @@ export function openConversation(host, chatId, { onBack } = {}) {
     tagIn.onkeydown = (e) => {
       if ((e.key === 'Enter' || e.key === ',') && tagIn.value.trim()) {
         e.preventDefault();
-        const t = tagIn.value.trim().toLowerCase();
-        if (!tags.includes(t)) patchLead(chat, { tags: [...tags, t] });
+        const tag = tagIn.value.trim().toLowerCase();
+        if (!tags.includes(tag)) patchLead(chat, { tags: [...tags, tag] });
         renderPanel();
         $('#lp-tag-in', host)?.focus();
       } else if (e.key === 'Backspace' && !tagIn.value && tags.length) {
@@ -540,8 +545,8 @@ export function openConversation(host, chatId, { onBack } = {}) {
     };
 
     $('#note-add', el).onclick = () => {
-      const t = $('#note-in', el).value.trim();
-      if (t) addNote(t);
+      const text = $('#note-in', el).value.trim();
+      if (text) addNote(text);
     };
     for (const b of $$('[data-note-del]', el)) {
       b.onclick = async () => {

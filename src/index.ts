@@ -1,7 +1,6 @@
 import pino from 'pino';
 import { config } from './config.js';
 import { openDb } from './db/index.js';
-import { getShop } from './db/repo.js';
 import { ChannelManager } from './channels/manager.js';
 import { scheduleDailyReport } from './report/daily.js';
 import { buildServer } from './server.js';
@@ -12,7 +11,7 @@ const channels = new ChannelManager(db, config.dataDir, log);
 const app = buildServer(db, channels, log);
 
 await app.listen({ port: config.port, host: config.host });
-await channels.resumeAll((await getShop(db)).id);
+await channels.resumeAll();
 const timer = scheduleDailyReport(db, channels, log);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

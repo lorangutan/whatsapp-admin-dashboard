@@ -1,7 +1,7 @@
 import type { Db } from './index.js';
 import type { InboundMessage, ChannelStatus } from '../channels/types.js';
 import type { BusinessHours } from '../sla/businessHours.js';
-import type { Stage } from './schema.js';
+import type { Role, Stage } from './schema.js';
 
 export interface Shop {
   id: number;
@@ -24,8 +24,12 @@ export interface Channel {
 
 const json = <T>(v: unknown): T => (typeof v === 'string' ? JSON.parse(v) : v) as T;
 
-export async function getShop(db: Db): Promise<Shop> {
-  const [r] = await db.query<Record<string, any>>('SELECT * FROM shops ORDER BY id LIMIT 1');
+/** A shop by id, or the first shop (the install owner's) when no id is given. */
+export async function getShop(db: Db, id?: number): Promise<Shop> {
+  const [r] = id
+    ? await db.query<Record<string, any>>('SELECT * FROM shops WHERE id = ?', [id])
+    : await db.query<Record<string, any>>('SELECT * FROM shops ORDER BY id LIMIT 1');
+  if (!r) throw Object.assign(new Error('shop not found'), { statusCode: 404 });
   return {
     id: r.id,
     name: r.name,
@@ -56,7 +60,77 @@ export async function updateShop(db: Db, id: number, patch: Partial<Omit<Shop, '
   ]);
 }
 
+export const listShopIds = async (db: Db) =>
+  (await db.query<{ id: number }>('SELECT id FROM shops ORDER BY id')).map((r) => r.id);
+
+/** Finds a shop by name, creating it (with default hours, stages and quick replies) if needed. */
+export async function ensureShop(
+  db: Db,
+  name: string,
+  defaults: { businessHours: unknown; stages: unknown; quickReplies: { shortcut: string; body: string }[] },
+) {
+  const [existing] = await db.query<{ id: number }>('SELECT id FROM shops WHERE name = ? ORDER BY id LIMIT 1', [name]);
+  if (existing) return existing.id;
+  const { insertId } = await db.run('INSERT INTO shops (name, business_hours, pipeline_stages) VALUES (?, ?, ?)', [
+    name,
+    JSON.stringify(defaults.businessHours),
+    JSON.stringify(defaults.stages),
+  ]);
+  for (const r of defaults.quickReplies) {
+    await db.run('INSERT IGNORE INTO quick_replies (shop_id, shortcut, body) VALUES (?, ?, ?)', [insertId, r.shortcut, r.body]);
+  }
+  return insertId;
+}
+
+// ---- accounts
+
+export interface User {
+  id: number;
+  shopId: number;
+  username: string;
+  passwordHash: string;
+  role: Role;
+}
+
+export async function findUser(db: Db, username: string): Promise<User | undefined> {
+  const [u] = await db.query<User>(
+    'SELECT id, shop_id AS shopId, username, password_hash AS passwordHash, role FROM users WHERE username = ?',
+    [username],
+  );
+  return u;
+}
+
+/** Creates the account, or resets its password, shop and role if the username exists. */
+export async function upsertUser(db: Db, username: string, passwordHash: string, shopId: number, role: Role) {
+  await db.run(
+    `INSERT INTO users (shop_id, username, password_hash, role) VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE shop_id = VALUES(shop_id), password_hash = VALUES(password_hash), role = VALUES(role)`,
+    [shopId, username, passwordHash, role],
+  );
+}
+
+// ---- tenant checks: which shop owns a given row (undefined if the row doesn't exist)
+
+const ownerQueries = {
+  chat: 'SELECT ch.shop_id AS shopId FROM chats c JOIN channels ch ON ch.id = c.channel_id WHERE c.id = ?',
+  note: 'SELECT ch.shop_id AS shopId FROM notes n JOIN chats c ON c.id = n.chat_id JOIN channels ch ON ch.id = c.channel_id WHERE n.id = ?',
+  followup:
+    'SELECT ch.shop_id AS shopId FROM followups f JOIN chats c ON c.id = f.chat_id JOIN channels ch ON ch.id = c.channel_id WHERE f.id = ?',
+  channel: 'SELECT shop_id AS shopId FROM channels WHERE id = ?',
+  quickReply: 'SELECT shop_id AS shopId FROM quick_replies WHERE id = ?',
+} as const;
+
+export async function shopOf(db: Db, kind: keyof typeof ownerQueries, id: number): Promise<number | undefined> {
+  const [row] = await db.query<{ shopId: number }>(ownerQueries[kind], [id]);
+  return row?.shopId;
+}
+
 const channelCols = 'id, shop_id AS shopId, agent_name AS agentName, phone, status';
+
+/** Every number across all shops; the WhatsApp manager reconnects them all on startup. */
+export function listAllChannels(db: Db): Promise<Channel[]> {
+  return db.query<Channel>(`SELECT ${channelCols} FROM channels ORDER BY id`);
+}
 
 export function listChannels(db: Db, shopId: number): Promise<Channel[]> {
   return db.query<Channel>(`SELECT ${channelCols} FROM channels WHERE shop_id = ? ORDER BY id`, [shopId]);

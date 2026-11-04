@@ -12,7 +12,8 @@
     "start": "tsx src/index.ts",
     "seed": "tsx src/seed.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "user": "tsx src/user.ts"
   },
   "dependencies": {
     "@fastify/static": "10.1.8",

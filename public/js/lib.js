@@ -1,4 +1,5 @@
 // Shared helpers: API, live events, formatting, icons, toasts, context menus, skeletons.
+import { t, locale, getLang } from './i18n.js';
 
 // ---------- API ----------
 // The session lives in an HttpOnly cookie; a 401 means it expired, so the app shows the login screen.
@@ -11,7 +12,7 @@ export async function api(path, opts = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && !path.startsWith('/api/login')) window.dispatchEvent(new Event('auth-required'));
-  if (!res.ok) throw new Error(data.error ?? res.statusText);
+  if (!res.ok) throw new Error(t(data.error ?? res.statusText));
   return data;
 }
 
@@ -30,30 +31,31 @@ export const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function debounce(fn, ms) {
-  let t;
+  let timer;
   return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
   };
 }
 
 // ---------- formatting ----------
 export function dur(ms) {
   if (ms == null) return '–';
+  const en = getLang() === 'en';
   const m = Math.round(ms / 60000);
-  if (m < 1) return ms < 60000 && ms >= 1000 ? `${Math.round(ms / 1000)} dtk` : '<1 mnt';
-  if (m < 60) return `${m} mnt`;
+  if (m < 1) return ms >= 1000 ? `${Math.round(ms / 1000)} ${en ? 's' : 'dtk'}` : en ? '<1 min' : '<1 mnt';
+  if (m < 60) return `${m} ${en ? 'min' : 'mnt'}`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}j ${m % 60}m`;
-  return `${Math.floor(h / 24)}h ${h % 24}j`;
+  if (h < 24) return en ? `${h}h ${m % 60}m` : `${h}j ${m % 60}m`;
+  return en ? `${Math.floor(h / 24)}d ${h % 24}h` : `${Math.floor(h / 24)}h ${h % 24}j`;
 }
 
 export function rp(n, compact = true) {
   if (n == null || n === '') return '';
   n = Number(n);
-  if (compact && n >= 1e9) return `Rp ${(n / 1e9).toLocaleString('id-ID', { maximumFractionDigits: 1 })} M`;
-  if (compact && n >= 1e6) return `Rp ${(n / 1e6).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jt`;
-  return `Rp ${n.toLocaleString('id-ID')}`;
+  if (compact && n >= 1e9) return `Rp ${(n / 1e9).toLocaleString(locale(), { maximumFractionDigits: 1 })} ${getLang() === 'en' ? 'B' : 'M'}`;
+  if (compact && n >= 1e6) return `Rp ${(n / 1e6).toLocaleString(locale(), { maximumFractionDigits: 1 })} ${getLang() === 'en' ? 'M' : 'jt'}`;
+  return `Rp ${n.toLocaleString(locale())}`;
 }
 
 const sameDay = (a, b) => a.toDateString() === b.toDateString();
@@ -62,22 +64,22 @@ export function listTime(d) {
   if (!d) return '';
   d = new Date(d);
   const now = new Date();
-  if (sameDay(d, now)) return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  if (sameDay(d, now)) return d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
   const y = new Date(now);
   y.setDate(now.getDate() - 1);
-  if (sameDay(d, y)) return 'Kemarin';
-  if (now - d < 6 * 864e5) return d.toLocaleDateString('id-ID', { weekday: 'long' });
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  if (sameDay(d, y)) return t('Kemarin');
+  if (now - d < 6 * 864e5) return d.toLocaleDateString(locale(), { weekday: 'long' });
+  return d.toLocaleDateString(locale(), { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
 export function dayLabel(d) {
   d = new Date(d);
   const now = new Date();
-  if (sameDay(d, now)) return 'Hari ini';
+  if (sameDay(d, now)) return t('Hari ini');
   const y = new Date(now);
   y.setDate(now.getDate() - 1);
-  if (sameDay(d, y)) return 'Kemarin';
-  return d.toLocaleDateString('id-ID', {
+  if (sameDay(d, y)) return t('Kemarin');
+  return d.toLocaleDateString(locale(), {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -85,18 +87,18 @@ export function dayLabel(d) {
   });
 }
 
-export const clock = (d) => new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+export const clock = (d) => new Date(d).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
 
 export function dueLabel(d) {
   d = new Date(d);
   const now = new Date();
   const time = clock(d);
-  if (d < now && !sameDay(d, now)) return `Terlambat · ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
-  if (sameDay(d, now)) return `Hari ini ${time}`;
-  const t = new Date(now);
-  t.setDate(now.getDate() + 1);
-  if (sameDay(d, t)) return `Besok ${time}`;
-  return `${d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`;
+  if (d < now && !sameDay(d, now)) return `${t('Terlambat')} · ${d.toLocaleDateString(locale(), { day: 'numeric', month: 'short' })}`;
+  if (sameDay(d, now)) return `${t('Hari ini')} ${time}`;
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  if (sameDay(d, tomorrow)) return `${t('Besok')} ${time}`;
+  return `${d.toLocaleDateString(locale(), { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`;
 }
 
 export const phoneOf = (jid) => (jid ?? '').split('@')[0];
@@ -146,9 +148,9 @@ export function setThemePref(pref) {
 darkQuery.addEventListener('change', () => getThemePref() === 'system' && applyTheme('system', true));
 
 export const THEMES = [
-  { id: 'system', label: 'Sistem', icon: 'monitor' },
-  { id: 'light', label: 'Terang', icon: 'sun' },
-  { id: 'dark', label: 'Gelap', icon: 'moon' },
+  { id: 'system', get label() { return t('Sistem'); }, icon: 'monitor' },
+  { id: 'light', get label() { return t('Terang'); }, icon: 'sun' },
+  { id: 'dark', get label() { return t('Gelap'); }, icon: 'moon' },
 ];
 
 // ---------- motion ----------
@@ -331,8 +333,8 @@ export function onContext(el, handler) {
   });
   let timer;
   el.addEventListener('touchstart', (e) => {
-    const t = e.touches[0];
-    timer = setTimeout(() => handler(t.clientX, t.clientY, e), 480);
+    const touch = e.touches[0];
+    timer = setTimeout(() => handler(touch.clientX, touch.clientY, e), 480);
   }, { passive: true });
   for (const ev of ['touchend', 'touchmove', 'touchcancel']) el.addEventListener(ev, () => clearTimeout(timer));
 }
@@ -369,8 +371,8 @@ export function empty({ ico = 'chat', title, text = '', action = '', actionId = 
 export async function copy(text) {
   try {
     await navigator.clipboard.writeText(text);
-    toast('Disalin');
+    toast(t('Disalin'));
   } catch {
-    toast('Tidak bisa menyalin', { error: true });
+    toast(t('Tidak bisa menyalin'), { error: true });
   }
 }

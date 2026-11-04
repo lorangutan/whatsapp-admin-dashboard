@@ -1,6 +1,7 @@
 // Pipeline: kanban of leads by stage, drag & drop to move (optimistic).
 import { api, $, $$, esc, icon, rp, dur, dueLabel, showMenu, onContext, empty, chatName, debounce, skeletonBlocks, flip } from './lib.js';
 import { store, stages, moveStage, leadMenu } from './store.js';
+import { t } from './i18n.js';
 
 export function mountPipeline({ main, navigate }) {
   let leads = [];
@@ -10,11 +11,11 @@ export function mountPipeline({ main, navigate }) {
   main.innerHTML = `
     <div class="page" style="flex:none;overflow:visible;padding-bottom:12px">
       <div class="page-head" style="margin-bottom:0">
-        <div><h1>Pipeline</h1><div class="muted small" id="pl-sum"></div></div>
+        <div><h1>${t('Pipeline')}</h1><div class="muted small" id="pl-sum"></div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <label class="search" style="margin:0;width:220px">${icon('search', 16)}<input id="pl-q" placeholder="Cari lead…"></label>
+          <label class="search" style="margin:0;width:220px">${icon('search', 16)}<input id="pl-q" placeholder="${t('Cari lead…')}"></label>
           ${store.channels.length > 1 ? `<select class="input" id="pl-agent" style="width:auto">
-            <option value="">Semua sales</option>${store.channels.map((c) => `<option value="${c.id}">${esc(c.agentName)}</option>`).join('')}
+            <option value="">${t('Semua sales')}</option>${store.channels.map((c) => `<option value="${c.id}">${esc(c.agentName)}</option>`).join('')}
           </select>` : ''}
         </div>
       </div>
@@ -63,8 +64,8 @@ export function mountPipeline({ main, navigate }) {
       ${l.interest ? `<div class="row">${icon('bike', 14)} ${esc(l.interest)}</div>` : ''}
       <div class="row">
         <span class="tag">${esc(l.agentName)}</span>
-        ${days != null ? `<span title="Lama di tahap ini">${esc(dur(days))}</span>` : ''}
-        ${l.unread ? `<span class="badge">${l.unread}</span>` : l.lastFromMe === false ? `<span class="mid" title="Belum dibalas">${icon('clock', 13)}</span>` : ''}
+        ${days != null ? `<span title="${t('Lama di tahap ini')}">${esc(dur(days))}</span>` : ''}
+        ${l.unread ? `<span class="badge">${l.unread}</span>` : l.lastFromMe === false ? `<span class="mid" title="${t('Belum dibalas')}">${icon('clock', 13)}</span>` : ''}
         ${due ? `<span class="pill ${due < new Date() ? 'bad' : 'warn'}">${esc(dueLabel(due))}</span>` : ''}
       </div>
     </div>`;
@@ -75,14 +76,14 @@ export function mountPipeline({ main, navigate }) {
     const shown = visible();
     const active = shown.filter((l) => !stages().find((s) => s.id === l.stage)?.outcome);
     const activeValue = active.reduce((n, l) => n + Number(l.dealValue ?? 0), 0);
-    $('#pl-sum', main).textContent = `${active.length} lead aktif · ${rp(activeValue) || 'Rp 0'} di pipeline`;
+    $('#pl-sum', main).textContent = t('{n} lead aktif · {v} di pipeline', { n: active.length, v: rp(activeValue) || 'Rp 0' });
 
     if (!leads.length) {
       board.innerHTML = empty({
         ico: 'board',
-        title: 'Pipeline masih kosong',
-        text: 'Chat baru dari customer otomatis masuk ke tahap “Baru”. Chat lama bisa dijadikan lead lewat klik kanan di Inbox.',
-        action: 'Buka Inbox',
+        title: t('Pipeline masih kosong'),
+        text: t('Chat baru dari customer otomatis masuk ke tahap “Baru”. Chat lama bisa dijadikan lead lewat klik kanan di Inbox.'),
+        action: t('Buka Inbox'),
         actionId: 'pl-go',
       });
       $('#pl-go', board).onclick = () => navigate('#/inbox');
@@ -94,10 +95,10 @@ export function mountPipeline({ main, navigate }) {
       .map((s) => {
         const col = shown.filter((l) => l.stage === s.id).sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
         const value = col.reduce((n, l) => n + Number(l.dealValue ?? 0), 0);
-        return `<section class="column" data-stage="${s.id}" aria-label="${esc(s.name)}">
-          <div class="column-head"><b class="${s.outcome === 'won' ? 'good' : s.outcome === 'lost' ? 'bad' : ''}">${esc(s.name)} <span class="faint num">${col.length}</span></b>
+        return `<section class="column" data-stage="${s.id}" aria-label="${esc(t(s.name))}">
+          <div class="column-head"><b class="${s.outcome === 'won' ? 'good' : s.outcome === 'lost' ? 'bad' : ''}">${esc(t(s.name))} <span class="faint num">${col.length}</span></b>
             <span class="sum num">${value ? esc(rp(value)) : ''}</span></div>
-          <div class="column-body">${col.map(card).join('') || `<div class="faint small" style="text-align:center;padding:18px 0">Tarik lead ke sini</div>`}</div>
+          <div class="column-body">${col.map(card).join('') || `<div class="faint small" style="text-align:center;padding:18px 0">${t('Tarik lead ke sini')}</div>`}</div>
         </section>`;
       })
       .join('');

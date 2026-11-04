@@ -633,6 +633,18 @@ tr:last-child td { border-bottom: 0; }
 .login-card .input { padding: 11px 14px; font-size: 15px; }
 .login-card .btn { padding: 11px; font-size: 15px; }
 .login-error:empty { display: none; }
+.login-card { position: relative; }
+.login-lang { position: absolute; top: 14px; right: 14px; }
+.login-lang button { padding: 4px 10px; font-size: 12px; }
+.login-card p.small { margin: 2px 0 0; }
+
+/* demo account: explore everything, but owner-only controls are hidden (the server refuses them too) */
+.role-demo .owner-only { display: none !important; }
+.demo-badge {
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; color: #fff; background: var(--warn);
+  padding: 2px 6px; border-radius: 6px; margin: -8px 0 10px;
+}
+@media (max-width: 760px) { .demo-badge { display: none; } }
 .shake { animation: shake 0.4s var(--ease-io); }
 @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 @keyframes fade-out { to { opacity: 0; } }

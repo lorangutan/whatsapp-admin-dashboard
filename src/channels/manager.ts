@@ -3,7 +3,7 @@ import path from 'node:path';
 import QRCode from 'qrcode';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/index.js';
-import { lidChatJids, listChannels, mergeLidChats, saveMessages, setChannelStatus, setContactNames } from '../db/repo.js';
+import { lidChatJids, listAllChannels, mergeLidChats, saveMessages, setChannelStatus, setContactNames, shopOf } from '../db/repo.js';
 import { bus } from '../events.js';
 import { BaileysAdapter } from './baileys.js';
 import type { ChannelAdapter, ChannelStatus } from './types.js';
@@ -15,6 +15,7 @@ export class ChannelOfflineError extends Error {
 }
 
 interface LiveChannel {
+  shopId: number;
   adapter: ChannelAdapter;
   status: ChannelStatus;
   /** QR as a data: URL, ready for an <img>. */
@@ -34,9 +35,9 @@ export class ChannelManager {
     return path.resolve(this.dataDir, 'auth', `channel-${channelId}`);
   }
 
-  /** Reconnect every number that was linked before the server restarted. */
-  async resumeAll(shopId: number) {
-    for (const c of await listChannels(this.db, shopId)) {
+  /** Reconnect every number, in every shop, that was linked before the server restarted. */
+  async resumeAll() {
+    for (const c of await listAllChannels(this.db)) {
       if (existsSync(this.authDir(c.id))) await this.start(c.id);
       else await setChannelStatus(this.db, c.id, 'disconnected');
     }
@@ -44,18 +45,20 @@ export class ChannelManager {
 
   async start(channelId: number) {
     await this.live.get(channelId)?.adapter.stop();
-    const entry: LiveChannel = { adapter: null!, status: 'connecting', qr: null };
+    const shopId = await shopOf(this.db, 'channel', channelId);
+    if (shopId === undefined) throw new Error(`channel ${channelId} not found`);
+    const entry: LiveChannel = { shopId, adapter: null!, status: 'connecting', qr: null };
     entry.adapter = new BaileysAdapter(this.authDir(channelId), {
       onQr: async (qr) => {
         entry.qr = await QRCode.toDataURL(qr);
-        bus.publish({ type: 'channel', channelId, status: 'qr' });
+        bus.publish({ shopId, type: 'channel', channelId, status: 'qr' });
       },
       onStatus: async (status, phone) => {
         entry.status = status;
         if (status === 'connected') entry.qr = null;
         await setChannelStatus(this.db, channelId, status, phone);
         this.log.info({ channelId, status }, 'channel status');
-        bus.publish({ type: 'channel', channelId, status });
+        bus.publish({ shopId, type: 'channel', channelId, status });
         if (status === 'connected') {
           const lids = await lidChatJids(this.db, channelId);
           if (lids.length) await entry.adapter.resolveLids?.(lids);
@@ -83,7 +86,7 @@ export class ChannelManager {
         if (!messages.length) return;
         try {
           const chatIds = await saveMessages(this.db, channelId, messages);
-          if (chatIds.length) bus.publish({ type: 'messages', chatIds });
+          if (chatIds.length) bus.publish({ shopId, type: 'messages', chatIds });
         } catch (err) {
           this.log.error({ err, channelId }, 'failed to store messages');
         }
@@ -112,13 +115,13 @@ export class ChannelManager {
     const chatIds = await saveMessages(this.db, channelId, [
       { waId, remoteJid, fromMe: true, kind: 'text', body: text, sentAt },
     ]);
-    bus.publish({ type: 'messages', chatIds });
+    bus.publish({ shopId: entry.shopId, type: 'messages', chatIds });
     return { waId, sentAt };
   }
 
-  /** Send from any connected number; used for the owner's daily report. */
-  async sendFromAny(toPhone: string, text: string) {
-    const entry = [...this.live.values()].find((e) => e.status === 'connected');
+  /** Send from any connected number of the shop; used for the owner's daily report. */
+  async sendFromAny(shopId: number, toPhone: string, text: string) {
+    const entry = [...this.live.values()].find((e) => e.shopId === shopId && e.status === 'connected');
     if (!entry) throw new Error('no connected WhatsApp number to send from');
     await entry.adapter.sendText(toPhone, text);
   }

@@ -67,6 +67,23 @@ serverless hosts like Vercel can't hold them. An Oracle Cloud *Always Free* VM d
 WhatsApp sessions live in `/var/lib/wamon` on the server; back it up or numbers must be re-linked after
 a rebuild. Everything else is in TiDB.
 
+## Accounts & shops
+
+Each login belongs to one shop and only ever sees that shop's numbers, chats and reports (every API
+route checks it). The owner logs in as `admin` (or `ADMIN_USERNAME`) with `ADMIN_PASSWORD` and gets the
+first shop. More logins, e.g. one per customer shop:
+
+```bash
+npm run user -- budi s3cret --shop "Bengkel Budi"           # owner of a new or existing shop
+npm run user -- tamu tamu123 --shop "Demo Bengkel" --role demo
+```
+
+`npm run seed` creates the **Demo Bengkel** shop with fake data and the public `demo` / `demo` login.
+The **demo** role can explore and move leads but can't link numbers, send messages or change settings.
+
+The interface is in Bahasa Indonesia or English (switch on the login screen, in Settings or with Ctrl+K).
+Texts live in the code in Indonesian; `public/js/i18n.js` holds the English versions.
+
 ## Features
 
 | Area | What it does |

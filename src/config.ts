@@ -16,7 +16,8 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL,
   /** WhatsApp login sessions live here; it must survive restarts. */
   dataDir: process.env.DATA_DIR ?? './data',
-  /** Dashboard password. Without it the dashboard is open, which is only allowed on localhost. */
+  /** Owner login (first shop). Without a password the dashboard is open, which is only allowed on localhost. */
+  adminUsername: (process.env.ADMIN_USERNAME || 'admin').toLowerCase(),
   adminPassword: process.env.ADMIN_PASSWORD || undefined,
   /** Signs session cookies. A random fallback works but logs everyone out on every restart. */
   sessionSecret: process.env.SESSION_SECRET || randomBytes(32).toString('hex'),

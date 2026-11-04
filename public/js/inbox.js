@@ -4,6 +4,7 @@ import {
 } from './lib.js';
 import { store, stages, stageName, stageClass, leadMenu } from './store.js';
 import { openConversation } from './convo.js';
+import { t } from './i18n.js';
 
 const PAGE = 60;
 
@@ -18,7 +19,7 @@ export function renderChatItem(c, active) {
     <div class="body">
       <div class="row"><span class="name">${esc(chatName(c))}</span><span class="time">${esc(listTime(c.lastMessageAt))}</span></div>
       <div class="row"><span class="preview">${c.lastFromMe ? icon('checks', 15, 'class="faint"') : ''}<span>${esc(preview)}</span></span>
-        ${c.unread ? `<span class="badge">${c.unread}</span>` : c.lastFromMe === false ? `<span title="Belum dibalas">${icon('clock', 15, 'class="mid"')}</span>` : ''}</div>
+        ${c.unread ? `<span class="badge">${c.unread}</span>` : c.lastFromMe === false ? `<span title="${t('Belum dibalas')}">${icon('clock', 15, 'class="mid"')}</span>` : ''}</div>
       <div class="meta">
         ${c.stage && c.stage !== 'none' ? `<span class="pill ${stageClass(c.stage)}">${esc(stageName(c.stage))}</span>` : ''}
         ${due ? `<span class="pill ${overdue ? 'bad' : 'warn'}">${icon('clock', 11)} ${esc(dueLabel(due))}</span>` : ''}
@@ -38,10 +39,10 @@ export function mountInbox({ app, list, main, navigate }) {
   let convo = null;
 
   list.innerHTML = `
-    <div class="pane-head"><h1>Chat</h1><span class="count" id="ib-count"></span></div>
-    <label class="search">${icon('search', 17)}<input id="ib-q" placeholder="Cari nama, nomor, unit…" value="${esc(filter.q)}" autocomplete="off"><kbd>Ctrl K</kbd></label>
+    <div class="pane-head"><h1>${t('Chat')}</h1><span class="count" id="ib-count"></span></div>
+    <label class="search">${icon('search', 17)}<input id="ib-q" placeholder="${t('Cari nama, nomor, unit…')}" value="${esc(filter.q)}" autocomplete="off"><kbd>Ctrl K</kbd></label>
     <div class="chips" id="ib-chips"></div>
-    <div class="list" id="ib-list" role="listbox" aria-label="Daftar chat"></div>`;
+    <div class="list" id="ib-list" role="listbox" aria-label="${t('Daftar chat')}"></div>`;
   const listEl = $('#ib-list', list);
 
   renderChips();
@@ -96,15 +97,15 @@ export function mountInbox({ app, list, main, navigate }) {
 
   function renderChips() {
     const modes = [
-      ['all', 'Semua'],
-      ['unreplied', 'Belum dibalas'],
-      ['lead', 'Leads'],
-      ...stages().filter((s) => !s.outcome).map((s) => [s.id, s.name]),
+      ['all', t('Semua')],
+      ['unreplied', t('Belum dibalas')],
+      ['lead', t('Leads')],
+      ...stages().filter((s) => !s.outcome).map((s) => [s.id, t(s.name)]),
     ];
     $('#ib-chips', list).innerHTML = `
       ${modes.map(([k, label]) => `<button class="chip ${filter.mode === k ? 'active' : ''}" data-mode="${k}">${esc(label)}</button>`).join('')}
       ${store.channels.length > 1 ? `<span class="chip ${filter.channelId ? 'active' : ''}"><select id="ib-agent" aria-label="Sales">
-        <option value="">Semua sales</option>
+        <option value="">${t('Semua sales')}</option>
         ${store.channels.map((c) => `<option value="${c.id}" ${String(c.id) === String(filter.channelId) ? 'selected' : ''}>${esc(c.agentName)}</option>`).join('')}
       </select></span>` : ''}`;
     for (const b of $$('[data-mode]', list)) {
@@ -156,13 +157,13 @@ export function mountInbox({ app, list, main, navigate }) {
   }
 
   function renderList() {
-    $('#ib-count', list).textContent = chats.length ? `${chats.length}${hasMore ? '+' : ''} chat` : '';
+    $('#ib-count', list).textContent = chats.length ? `${chats.length}${hasMore ? '+' : ''} ${t('chat')}` : '';
     if (!chats.length) {
       if (!store.channels.length) {
-        listEl.innerHTML = empty({ ico: 'phone', title: 'Belum ada nomor WhatsApp', text: 'Hubungkan nomor sales untuk mulai memantau chat.', action: 'Hubungkan nomor', actionId: 'ib-go-numbers' });
+        listEl.innerHTML = empty({ ico: 'phone', title: t('Belum ada nomor WhatsApp'), text: t('Hubungkan nomor sales untuk mulai memantau chat.'), action: t('Hubungkan nomor'), actionId: 'ib-go-numbers' });
         $('#ib-go-numbers', listEl).onclick = () => navigate('#/numbers');
       } else if (filter.q || filter.mode !== 'all' || filter.channelId) {
-        listEl.innerHTML = empty({ ico: 'filter', title: 'Tidak ada chat yang cocok', text: 'Coba kata kunci lain atau hapus filter.', action: 'Hapus filter', actionId: 'ib-clear' });
+        listEl.innerHTML = empty({ ico: 'filter', title: t('Tidak ada chat yang cocok'), text: t('Coba kata kunci lain atau hapus filter.'), action: t('Hapus filter'), actionId: 'ib-clear' });
         $('#ib-clear', listEl).onclick = () => {
           filter = { mode: 'all', channelId: '', q: '' };
           $('#ib-q', list).value = '';
@@ -171,7 +172,7 @@ export function mountInbox({ app, list, main, navigate }) {
           reload();
         };
       } else {
-        listEl.innerHTML = empty({ ico: 'chat', title: 'Belum ada chat', text: 'Chat baru akan muncul di sini begitu customer mengirim pesan.' });
+        listEl.innerHTML = empty({ ico: 'chat', title: t('Belum ada chat'), text: t('Chat baru akan muncul di sini begitu customer mengirim pesan.') });
       }
       return;
     }
@@ -196,9 +197,9 @@ export function mountInbox({ app, list, main, navigate }) {
   function welcome() {
     main.innerHTML = `<div class="empty welcome"><div class="inner">
       <div class="ico">${icon('chat', 30)}</div>
-      <div class="ttl">Pilih chat untuk mulai</div>
-      <div class="txt">Klik kanan chat untuk pindah tahap atau jadwalkan follow-up.</div>
-      <div class="txt" style="margin-top:8px"><kbd>Ctrl K</kbd> cari &nbsp; <kbd>↑</kbd><kbd>↓</kbd> pindah chat &nbsp; <kbd>/</kbd> balasan cepat &nbsp; <kbd>Esc</kbd> tutup</div>
+      <div class="ttl">${t('Pilih chat untuk mulai')}</div>
+      <div class="txt">${t('Klik kanan chat untuk pindah tahap atau jadwalkan follow-up.')}</div>
+      <div class="txt" style="margin-top:8px"><kbd>Ctrl K</kbd> ${t('cari')} &nbsp; <kbd>↑</kbd><kbd>↓</kbd> ${t('pindah chat')} &nbsp; <kbd>/</kbd> ${t('balasan cepat')} &nbsp; <kbd>Esc</kbd> ${t('tutup')}</div>
     </div></div>`;
   }
 
