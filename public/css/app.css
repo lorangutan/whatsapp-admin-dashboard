@@ -530,6 +530,20 @@ tr:last-child td { border-bottom: 0; }
 .deal .val { font-weight: 600; color: var(--accent-text); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .deal .row { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 
+/* stage tabs: phones only (desktop sees several columns at once) */
+.stage-tabs { display: none; }
+.stage-tab {
+  flex: none; border: 0; border-radius: 999px; padding: 6px 8px 6px 13px; background: var(--input); color: var(--muted);
+  font-size: 13px; font-weight: 600; display: inline-flex; gap: 7px; align-items: center;
+  transition: background-color var(--fast), color var(--fast);
+}
+.stage-tab .n {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--panel); color: var(--text);
+  font-size: 11.5px; display: inline-grid; place-items: center; font-variant-numeric: tabular-nums;
+}
+.stage-tab.active { background: var(--accent-soft); color: var(--accent-text); }
+.stage-tab.active .n { background: var(--accent); color: #fff; }
+
 /* ---------- numbers & settings ---------- */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
 .channel-card { animation: rise var(--med) var(--ease) both; }
@@ -696,7 +710,11 @@ tr:last-child td { border-bottom: 0; }
   .bubble { max-width: 85%; }
   .lead-panel { width: 100%; top: 60px; }
   .page { padding: 18px 16px 30px; }
-  .board { padding: 0 16px 16px; }
+  .stage-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 0 16px 12px; scrollbar-width: none; }
+  .stage-tabs::-webkit-scrollbar { display: none; }
+  /* One column per screen, snapping into place, with the next one peeking in from the right edge. */
+  .board { padding: 0 16px 16px; gap: 10px; scroll-snap-type: x mandatory; scroll-padding: 0 16px; }
+  .column { width: calc(100vw - 64px); scroll-snap-align: start; }
   .settings .row2 { grid-template-columns: 1fr; }
   .day-row { grid-template-columns: 90px 1fr 1fr; }
   .qr-row { grid-template-columns: 1fr; }

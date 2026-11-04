@@ -176,9 +176,8 @@ const EN = {
   'Tidak bisa menyalin': "Couldn't copy",
 
   // follow-ups view
-  'Belum selesai': 'Open',
-  'Termasuk selesai': 'Include done',
-  '{n} terbuka': '{n} open',
+  'Belum selesai': 'To do',
+  '{n} belum selesai': '{n} to do',
   '{n} terlambat': '{n} overdue',
   'Tidak ada follow-up': 'No follow-ups',
   'Jadwalkan dari chat lewat tombol jam, atau klik kanan chat → Follow-up besok.':

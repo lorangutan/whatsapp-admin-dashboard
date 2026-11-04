@@ -26,7 +26,7 @@ export function mountFollowups({ app, list, main, navigate }) {
     <div class="pane-head"><h1>${t('Follow-up')}</h1><span class="count" id="fu-count"></span></div>
     <div class="chips">
       <button class="chip active" data-done="0">${t('Belum selesai')}</button>
-      <button class="chip" data-done="1">${t('Termasuk selesai')}</button>
+      <button class="chip" data-done="1">${t('Semua')}</button>
     </div>
     <div class="list" id="fu-list"></div>`;
   const listEl = $('#fu-list', list);
@@ -49,7 +49,7 @@ export function mountFollowups({ app, list, main, navigate }) {
   function render() {
     const open = items.filter((f) => !f.doneAt);
     const overdue = open.filter((f) => new Date(f.dueAt) < new Date()).length;
-    $('#fu-count', list).textContent = `${t('{n} terbuka', { n: open.length })}${overdue ? ` · ${t('{n} terlambat', { n: overdue })}` : ''}`;
+    $('#fu-count', list).textContent = `${t('{n} belum selesai', { n: open.length })}${overdue ? ` · ${t('{n} terlambat', { n: overdue })}` : ''}`;
     if (!items.length) {
       listEl.innerHTML = empty({
         ico: 'clock',

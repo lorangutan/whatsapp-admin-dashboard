@@ -20,6 +20,7 @@ export function mountPipeline({ main, navigate }) {
         </div>
       </div>
     </div>
+    <div class="stage-tabs" id="pl-tabs" role="tablist" aria-label="${t('Tahap')}"></div>
     <div class="board" id="pl-board">${stages().map(() => `<div class="column"><div class="column-body" style="padding-top:12px">${skeletonBlocks(3, 76)}</div></div>`).join('')}</div>`;
 
   $('#pl-q', main).addEventListener('input', debounce((e) => {
@@ -31,6 +32,28 @@ export function mountPipeline({ main, navigate }) {
     agent = agentSel.value;
     render();
   };
+
+  // Phones show one column at a time; the tab row says which stage you're on and how many more there are.
+  const boardEl = $('#pl-board', main);
+  const tabsEl = $('#pl-tabs', main);
+  let activeTab = 0;
+  function syncTabs() {
+    const cols = $$('.column[data-stage]', boardEl);
+    if (!cols.length) return;
+    const left = boardEl.scrollLeft;
+    let best = 0;
+    cols.forEach((c, i) => {
+      if (Math.abs(c.offsetLeft - boardEl.offsetLeft - left) < Math.abs(cols[best].offsetLeft - boardEl.offsetLeft - left)) best = i;
+    });
+    if (best === activeTab && tabsEl.querySelector('.active')) return;
+    activeTab = best;
+    $$('.stage-tab', tabsEl).forEach((tab, i) => {
+      tab.classList.toggle('active', i === best);
+      tab.setAttribute('aria-selected', i === best);
+      if (i === best) tab.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    });
+  }
+  boardEl.addEventListener('scroll', debounce(syncTabs, 60), { passive: true });
 
   const onChat = (e) => {
     const i = leads.findIndex((l) => l.id === e.detail.id);
@@ -103,6 +126,20 @@ export function mountPipeline({ main, navigate }) {
       })
       .join('');
     }, '.deal[data-id]');
+
+    tabsEl.innerHTML = stages()
+      .map((s, i) => {
+        const n = shown.filter((l) => l.stage === s.id).length;
+        return `<button class="stage-tab ${i === activeTab ? 'active' : ''} ${s.outcome ?? ''}" role="tab" aria-selected="${i === activeTab}" data-tab="${i}">
+          ${esc(t(s.name))}<span class="n">${n}</span></button>`;
+      })
+      .join('');
+    for (const tab of $$('.stage-tab', tabsEl)) {
+      tab.onclick = () => {
+        const col = $$('.column[data-stage]', board)[Number(tab.dataset.tab)];
+        board.scrollTo({ left: col.offsetLeft - board.offsetLeft - 16, behavior: 'smooth' });
+      };
+    }
 
     for (const el of $$('.deal', board)) {
       const lead = leads.find((l) => l.id === Number(el.dataset.id));
