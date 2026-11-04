@@ -138,7 +138,7 @@ async function start() {
     main.innerHTML = `<div class="empty"><div class="inner"><div class="ttl">Server tidak bisa dihubungi</div><div class="txt">${err.message}</div></div></div>`;
     return;
   }
-  document.title = `${store.shop.name} · WA Monitor`;
+  document.title = `${store.shop.name} · Wamon`;
   renderRail();
   addEventListener('hashchange', route);
   addEventListener('keydown', onKey);

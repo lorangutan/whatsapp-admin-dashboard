@@ -97,7 +97,7 @@ export function mountSettings({ main }) {
           businessHours,
         },
       });
-      document.title = `${store.shop.name} · WA Monitor`;
+      document.title = `${store.shop.name} · Wamon`;
       toast('Pengaturan disimpan');
     } catch (err) {
       toast(err.message, { error: true });

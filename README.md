@@ -1,4 +1,4 @@
-# WA Monitor
+# Wamon
 
 WhatsApp sales CRM + response-time (SLA) reports for small dealers, bengkel and motor bekas sellers.
 Each sales agent links their own WhatsApp number; the owner sees every chat, replies from the

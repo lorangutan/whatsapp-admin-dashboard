@@ -55,6 +55,7 @@ export function formatDailyReport(shop: Shop, report: Report): string {
       lines.push(`• ${w.contactName ?? w.phone} (${w.agentName}) — ${formatDuration(w.waitedMs)}`);
     }
   }
+  lines.push('', '_Dikirim oleh Wamon_');
   return lines.join('\n');
 }
 

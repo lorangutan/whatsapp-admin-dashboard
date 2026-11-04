@@ -1,5 +1,5 @@
 {
-  "name": "wa-monitor",
+  "name": "wamon",
   "version": "0.1.0",
   "private": true,
   "description": "WhatsApp chat monitor + SLA reports for motor dealers and bengkel",
