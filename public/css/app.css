@@ -545,6 +545,8 @@ button.pill.resolve-btn { padding: 5px 11px; font-size: 12.5px; }
 @media (max-width: 760px) {
   .hide-sm { display: none; }
   .resolve-btn { padding: 7px; }
+  /* The header is tight on phones: the stage stays one tap away in the lead panel and the long-press menu. */
+  #cv-stage { display: none; }
 }
 
 /* stage tabs: phones only (desktop sees several columns at once) */

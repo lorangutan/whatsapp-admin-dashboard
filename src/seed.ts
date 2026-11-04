@@ -121,4 +121,28 @@ for (const ch of demoChannels) {
 }
 console.log(`CRM data added to ${enriched} demo chats`);
 
+// Tuntas history: on most days where the agent had the last word, the chat was marked solved a little
+// after that reply. Only chats with no resolutions yet, so re-running doesn't stack them.
+const demoMessages = await db.query<{ chatId: number; fromMe: boolean; sentAt: Date }>(
+  `SELECT m.chat_id AS chatId, m.from_me AS fromMe, m.sent_at AS sentAt
+     FROM messages m JOIN chats c ON c.id = m.chat_id JOIN channels ch ON ch.id = c.channel_id
+    WHERE ch.shop_id = ? AND NOT EXISTS (SELECT 1 FROM resolutions r WHERE r.chat_id = c.id)
+    ORDER BY m.chat_id, m.sent_at`,
+  [shop.id],
+);
+const lastOfDay = new Map<string, { chatId: number; fromMe: boolean; sentAt: Date }>();
+for (const m of demoMessages) {
+  const wibDay = new Date(new Date(m.sentAt).getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
+  lastOfDay.set(`${m.chatId}:${wibDay}`, m);
+}
+let resolvedDays = 0;
+for (const m of lastOfDay.values()) {
+  if (!m.fromMe || rand() > 0.75) continue;
+  const at = new Date(new Date(m.sentAt).getTime() + (4 + rand() * 80) * 60_000);
+  if (at.getTime() > Date.now()) continue;
+  await db.run('INSERT INTO resolutions (chat_id, resolved_at) VALUES (?, ?)', [m.chatId, at]);
+  resolvedDays++;
+}
+console.log(`Tuntas history added for ${resolvedDays} chat-days`);
+
 await db.close();
