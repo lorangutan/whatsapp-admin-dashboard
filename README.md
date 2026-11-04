@@ -28,6 +28,24 @@ Link a number: **Nomor WA → Hubungkan nomor**, then on the agent's phone open 
 Perangkat tertaut → Tautkan perangkat and scan the QR. Recent history and the address book are
 imported on that first link, so reports and contact names are there from day one.
 
+## Run on a Windows PC + Cloudflare Tunnel (free)
+
+Good for a pilot: the PC must stay on and logged in (set Sleep to *Never*).
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\windows\install.ps1 -DevEnv .env
+```
+
+It installs a clean copy from GitHub to `%LOCALAPPDATA%\Wamon\app`, asks for the dashboard password
+(stored only in `%LOCALAPPDATA%\Wamon\wamon.env`, readable by your Windows account only), reuses the TiDB
+cluster from your dev `.env` with a separate `wamon` database, and registers a hidden **Wamon** task that
+starts at logon and restarts on crashes. It serves on `http://127.0.0.1:3100`.
+
+Expose it with a Cloudflare Tunnel: in the Cloudflare dashboard → Zero Trust → Networks → Tunnels, create a
+tunnel, run the `cloudflared service install …` command it shows in an *admin* PowerShell, and add a public
+hostname (e.g. `app.yourdomain.my.id`) pointing to `http://localhost:3100`.
+Update: `deploy\windows\update.ps1` · remove: `deploy\windows\uninstall.ps1` (both in `%LOCALAPPDATA%\Wamon\app`).
+
 ## Deploy (Oracle Cloud Always Free + TiDB)
 
 The WhatsApp connections must stay open 24/7, so Wamon runs as one long-lived process on a server —

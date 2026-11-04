@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
 try {
-  process.loadEnvFile();
+  // ENV_FILE lets a production install keep its secrets outside the code folder.
+  process.loadEnvFile(process.env.ENV_FILE ?? '.env');
 } catch {
-  // .env is optional
+  // the env file is optional; variables may come from the environment instead
 }
 
 const host = process.env.HOST ?? '127.0.0.1';
