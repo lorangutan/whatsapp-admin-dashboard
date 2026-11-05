@@ -542,6 +542,68 @@ tr:last-child td { border-bottom: 0; }
 /* "tuntas" toggle in the chat header */
 .resolve-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
 button.pill.resolve-btn { padding: 5px 11px; font-size: 12.5px; }
+/* Number-down alert bar */
+.down-bar {
+  position: fixed; z-index: 60; top: 12px; left: 50%; transform: translateX(-50%);
+  width: min(640px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px 9px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.35;
+  background: var(--danger); color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.22);
+  animation: down-in .3s ease-out;
+}
+.down-bar span { flex: 1; }
+.down-bar .btn { background: #fff; color: var(--danger); white-space: nowrap; }
+.down-bar .icon-btn { color: #fff; }
+@keyframes down-in { from { opacity: 0; transform: translate(-50%, -8px); } }
+/* On wider screens it is a strip across the top that pushes the app down instead of covering it. */
+@media (min-width: 761px) {
+  .down-bar { top: 0; left: 0; right: 0; width: auto; transform: none; border-radius: 0; justify-content: center; min-height: 48px; box-sizing: border-box; animation: none; }
+  .down-bar span { flex: 0 1 auto; }
+  body.has-down .app { margin-top: 48px; height: calc(100dvh - 48px); }
+}
+
+/* "Hari ini" strip in the chat list and panel in the main pane */
+.today-strip {
+  display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 9px 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer; transition: background .15s;
+}
+.today-strip:hover { background: var(--hover); }
+.today-strip > svg:first-child { color: var(--accent); flex: none; }
+.today-strip span { flex: 1; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.today-strip .go { color: var(--muted); flex: none; }
+.today-strip.alarm { border-color: var(--danger); }
+.today-strip.alarm > svg:first-child { color: var(--danger); }
+.today { padding: 22px 26px 40px; max-width: 720px; width: 100%; margin: 0 auto; overflow-y: auto; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; }
+.today-head { display: flex; align-items: center; gap: 10px; }
+.today-head h1 { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; font-size: 22px; }
+.today-head h1 svg { color: var(--accent); }
+.today-sec { display: grid; gap: 2px; }
+.today-sec h2 { display: flex; align-items: center; gap: 7px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
+.today-sec h2 .count { margin-left: auto; font-weight: 600; }
+.today-item {
+  display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; border: 0; background: none;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background .15s;
+}
+.today-item:hover { background: var(--hover); }
+.today-item .body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.today-item .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.today-item .detail { text-align: right; font-size: 13px; white-space: nowrap; display: grid; }
+.today-item .detail small { color: var(--muted); font-size: 11.5px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.today-alert {
+  display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 12px; text-decoration: none;
+  color: var(--danger); border: 1px solid currentColor; font-size: 13.5px;
+}
+.today-alert span:not(.go) { flex: 1; color: var(--text); }
+.today-alert .go { font-weight: 600; white-space: nowrap; }
+.today-done { display: grid; justify-items: center; gap: 8px; padding: 30px 0; color: var(--muted); }
+.today-keys { margin-top: auto; text-align: center; padding-top: 12px; }
+@media (max-width: 760px) {
+  .today { padding: 14px 14px 90px; }
+  .today-keys { display: none; }
+  .down-bar { top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: auto 1fr auto; row-gap: 8px; }
+  .down-bar .btn { grid-column: 2 / 4; grid-row: 2; justify-self: start; }
+}
+
 /* Settings: metric preferences and pipeline stage editor */
 .settings-card { display: grid; gap: 12px; }
 .settings label.check { display: flex; gap: 8px; align-items: center; font-size: 13.5px; cursor: pointer; }

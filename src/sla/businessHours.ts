@@ -8,7 +8,7 @@ export interface ShopClock {
 }
 
 export const MINUTE = 60_000;
-const DAY = 1440 * MINUTE;
+export const DAY = 1440 * MINUTE;
 
 function toMinutes(hm: string): number {
   const [h, m] = hm.split(':').map(Number);

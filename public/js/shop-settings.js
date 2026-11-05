@@ -142,3 +142,46 @@ export function mountMetricSettings(host) {
     saveShop({ prefs: p }, t('Metrik disimpan'));
   };
 }
+
+export function mountAlertSettings(host) {
+  const p = structuredClone(store.shop.prefs);
+  host.innerHTML = `
+    <h2>${t('Pengingat & peringatan')}</h2>
+    <label class="check"><input type="checkbox" id="al-down" ${p.alertDisconnect ? 'checked' : ''}> ${t('Kirim WA ke owner kalau nomor sales terputus lebih dari 5 menit, dan saat tersambung lagi')}</label>
+    <div class="row2">
+      <label class="field">${t('Daftar tugas pagi, jam kirim')}
+        <input class="input" type="time" id="al-time" value="${esc(p.morningTime ?? '')}">
+        <span class="faint small">${t('Kosongkan untuk mematikan. Dikirim ke No. WA owner.')}</span></label>
+      <label class="field">${t('Lead dianggap diam setelah (hari)')}
+        <input class="input" type="number" min="1" max="60" id="al-stale" value="${p.staleDays}"></label>
+    </div>
+    <label class="check"><input type="checkbox" id="al-sales" ${p.morningToSales ? 'checked' : ''}> ${t('Kirim juga ke tiap sales, berisi chat mereka sendiri')}</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" type="button" id="al-save">${t('Simpan')}</button>
+      <button class="btn ghost" type="button" id="al-preview">${t('Lihat daftar pagi')}</button>
+      <button class="btn ghost" type="button" id="al-send">${t('Kirim sekarang')}</button>
+    </div>
+    <pre class="report-preview" id="al-out" hidden></pre>`;
+
+  $('#al-save', host).onclick = () => {
+    p.alertDisconnect = $('#al-down', host).checked;
+    p.morningTime = $('#al-time', host).value || null;
+    p.morningToSales = $('#al-sales', host).checked;
+    p.staleDays = Number($('#al-stale', host).value) || 3;
+    saveShop({ prefs: p }, t('Pengaturan disimpan'));
+  };
+  $('#al-preview', host).onclick = async () => {
+    const { text } = await api('/api/today/preview');
+    const out = $('#al-out', host);
+    out.textContent = text;
+    out.hidden = false;
+  };
+  $('#al-send', host).onclick = async () => {
+    try {
+      const { sent } = await api('/api/today/send', { method: 'POST' });
+      toast(t('Daftar pagi terkirim ({n})', { n: sent.length }));
+    } catch (err) {
+      toast(err.message, { error: true });
+    }
+  };
+}

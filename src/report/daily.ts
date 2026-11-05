@@ -4,6 +4,7 @@ import type { Db } from '../db/index.js';
 import { getShop, listShopIds, type Shop } from '../db/repo.js';
 import { localDayStart, toLocalWallClock } from '../sla/businessHours.js';
 import { buildReport, shopClock, type Report } from './service.js';
+import { sendMorningList } from './today.js';
 
 export function formatDuration(ms: number | null): string {
   if (ms === null) return '-';
@@ -72,22 +73,39 @@ export async function sendDailyReport(db: Db, channels: ChannelManager, shopId: 
   await channels.sendFromAny(shop.id, shop.ownerWa, formatDailyReport(shop, report));
 }
 
-/** Checks once a minute, for every shop, whether it's that shop's report time. */
+/** Checks once a minute, for every shop, whether it's time for the morning list or the evening report. */
 export function scheduleDailyReport(db: Db, channels: ChannelManager, log: FastifyBaseLogger) {
-  const lastSentDay = new Map<number, string>();
+  const lastSent = new Map<string, string>();
+  const due = (key: string, time: string | null, local: string) => {
+    const day = local.slice(0, 10);
+    if (!time || local.slice(11, 16) !== time || lastSent.get(key) === day) return false;
+    lastSent.set(key, day);
+    return true;
+  };
   return setInterval(async () => {
     for (const shopId of await listShopIds(db).catch(() => [])) {
+      let shop: Shop;
       try {
-        const shop = await getShop(db, shopId);
-        if (!shop.reportTime || !shop.ownerWa) continue;
-        const local = toLocalWallClock(new Date(), shopClock(shop)).toISOString(); // YYYY-MM-DDTHH:MM
-        const day = local.slice(0, 10);
-        if (local.slice(11, 16) !== shop.reportTime || lastSentDay.get(shopId) === day) continue;
-        lastSentDay.set(shopId, day);
-        await sendDailyReport(db, channels, shopId);
-        log.info({ shopId }, 'daily report sent');
-      } catch (err) {
-        log.error({ err, shopId }, 'daily report failed');
+        shop = await getShop(db, shopId);
+      } catch {
+        continue;
+      }
+      const local = toLocalWallClock(new Date(), shopClock(shop)).toISOString(); // YYYY-MM-DDTHH:MM
+      if (due(`morning-${shopId}`, shop.prefs.morningTime, local)) {
+        try {
+          const sent = await sendMorningList(db, channels, shopId);
+          log.info({ shopId, sent }, 'morning list sent');
+        } catch (err) {
+          log.error({ err, shopId }, 'morning list failed');
+        }
+      }
+      if (shop.ownerWa && due(`report-${shopId}`, shop.reportTime, local)) {
+        try {
+          await sendDailyReport(db, channels, shopId);
+          log.info({ shopId }, 'daily report sent');
+        } catch (err) {
+          log.error({ err, shopId }, 'daily report failed');
+        }
       }
     }
   }, 60_000);

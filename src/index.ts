@@ -13,10 +13,12 @@ const app = buildServer(db, channels, log);
 await app.listen({ port: config.port, host: config.host });
 await channels.resumeAll();
 const timer = scheduleDailyReport(db, channels, log);
+const watchdog = channels.watch();
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {
     clearInterval(timer);
+    clearInterval(watchdog);
     await channels.stopAll();
     await app.close();
     await db.close();

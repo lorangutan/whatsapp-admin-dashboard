@@ -12,6 +12,7 @@ import { defaultPrefs, type ShopPrefs, type Stage } from './db/schema.js';
 import { localDayStart } from './sla/businessHours.js';
 import { buildReport, shopClock } from './report/service.js';
 import { formatDailyReport, sendDailyReport } from './report/daily.js';
+import { buildToday, formatToday, sendMorningList } from './report/today.js';
 
 const DAY = 86_400_000;
 
@@ -143,6 +144,22 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
     const now = new Date();
     const from = localDayStart(now, shopClock(s));
     return { text: formatDailyReport(s, await buildReport(db, s, { from, to: now }, now)) };
+  });
+
+  // ---- today's to-do list ("Hari ini"): the inbox card and the morning WhatsApp message
+  app.get('/api/today', async (req) => buildToday(db, await shopOf(req), channels));
+
+  app.get('/api/today/preview', async (req) => {
+    const s = await shopOf(req);
+    return { text: formatToday(s, await buildToday(db, s, channels), { title: `Hari ini — ${s.name}` }) };
+  });
+
+  app.post('/api/today/send', { preHandler: ownerOnly }, async (req, reply) => {
+    try {
+      return { sent: await sendMorningList(db, channels, req.session.shopId) };
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
   });
 
   app.post('/api/report/send', { preHandler: ownerOnly }, async (req, reply) => {
@@ -306,5 +323,9 @@ function cleanPrefs(p: Partial<ShopPrefs>): ShopPrefs {
       resolution: Boolean(full.metrics.resolution),
       deals: Boolean(full.metrics.deals),
     },
+    alertDisconnect: Boolean(full.alertDisconnect),
+    morningTime: typeof full.morningTime === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(full.morningTime) ? full.morningTime : null,
+    morningToSales: Boolean(full.morningToSales),
+    staleDays: clamp(full.staleDays, 1, 60, defaultPrefs.staleDays),
   };
 }

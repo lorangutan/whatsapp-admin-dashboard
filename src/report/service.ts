@@ -27,6 +27,7 @@ export interface PipelineReport {
 
 export interface WaitingLead {
   chatId: number;
+  channelId: number;
   agentName: string;
   contactName: string | null;
   phone: string;
@@ -125,6 +126,7 @@ export async function buildReport(db: Db, shop: Shop, period: Period, now = new 
       const contact = contacts.get(chatId);
       return {
         chatId,
+        channelId,
         agentName: agentName.get(channelId) ?? '?',
         contactName: contact?.contactName ?? null,
         phone: contact?.remoteJid.split('@')[0] ?? '',

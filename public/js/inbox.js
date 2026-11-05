@@ -5,6 +5,7 @@ import {
 import { store, stages, stageName, stageClass, leadMenu } from './store.js';
 import { openConversation } from './convo.js';
 import { t } from './i18n.js';
+import { loadToday, renderToday, todaySummary, isEmpty } from './today.js';
 
 const PAGE = 60;
 
@@ -37,9 +38,11 @@ export function mountInbox({ app, list, main, navigate }) {
   let loading = false;
   let activeId = null;
   let convo = null;
+  let today = null;
 
   list.innerHTML = `
     <div class="pane-head"><h1>${t('Chat')}</h1><span class="count" id="ib-count"></span></div>
+    <button class="today-strip" type="button" id="ib-today" hidden></button>
     <label class="search">${icon('search', 17)}<input id="ib-q" placeholder="${t('Cari nama, nomor, unit…')}" value="${esc(filter.q)}" autocomplete="off"><kbd>Ctrl K</kbd></label>
     <div class="chips" id="ib-chips"></div>
     <div class="list" id="ib-list" role="listbox" aria-label="${t('Daftar chat')}"></div>`;
@@ -48,6 +51,13 @@ export function mountInbox({ app, list, main, navigate }) {
   renderChips();
   welcome();
   reload();
+  refreshToday();
+  $('#ib-today', list).onclick = () => {
+    // With a chat open (desktop), closing it brings the panel back; otherwise slide it in (phones).
+    if (activeId) return navigate('#/inbox');
+    app.classList.add('show-main');
+    showToday(true);
+  };
 
   $('#ib-q', list).addEventListener('input', debounce((e) => {
     filter.q = e.target.value.trim();
@@ -196,7 +206,38 @@ export function mountInbox({ app, list, main, navigate }) {
     });
   }
 
+  async function refreshToday() {
+    try {
+      today = await loadToday();
+    } catch {
+      return;
+    }
+    const strip = $('#ib-today', list);
+    strip.hidden = isEmpty(today);
+    strip.classList.toggle('alarm', today.offline.length > 0);
+    strip.innerHTML = `${icon(today.offline.length ? 'alert' : 'sun', 16)}<b>${t('Hari ini')}</b><span>${esc(todaySummary(today))}</span>${icon('arrow', 15, 'class="go"')}`;
+    // Keep the panel current when nothing else is open in the main pane.
+    if (!activeId) showToday(app.classList.contains('show-main'));
+  }
+
+  function showToday(withBack) {
+    if (!today || isEmpty(today)) return welcomeHint();
+    renderToday(main, today, {
+      onOpen: (id) => navigate(`#/inbox/${id}`),
+      onBack: withBack ? () => app.classList.remove('show-main') : null,
+      footer: `<div class="faint small today-keys">${keysHint()}</div>`,
+    });
+  }
+
+  const keysHint = () =>
+    `<kbd>Ctrl K</kbd> ${t('cari')} &nbsp; <kbd>↑</kbd><kbd>↓</kbd> ${t('pindah chat')} &nbsp; <kbd>/</kbd> ${t('balasan cepat')} &nbsp; <kbd>Esc</kbd> ${t('tutup')}`;
+
   function welcome() {
+    if (today && !isEmpty(today)) return showToday(false);
+    welcomeHint();
+  }
+
+  function welcomeHint() {
     main.innerHTML = `<div class="empty welcome"><div class="inner">
       <div class="ico">${icon('chat', 30)}</div>
       <div class="ttl">${t('Pilih chat untuk mulai')}</div>
@@ -204,6 +245,8 @@ export function mountInbox({ app, list, main, navigate }) {
       <div class="txt" style="margin-top:8px"><kbd>Ctrl K</kbd> ${t('cari')} &nbsp; <kbd>↑</kbd><kbd>↓</kbd> ${t('pindah chat')} &nbsp; <kbd>/</kbd> ${t('balasan cepat')} &nbsp; <kbd>Esc</kbd> ${t('tutup')}</div>
     </div></div>`;
   }
+
+  const refreshTodaySoon = debounce(refreshToday, 1500);
 
   function open(id) {
     if (id === activeId && convo) return;
@@ -240,6 +283,7 @@ export function mountInbox({ app, list, main, navigate }) {
     onLive(e) {
       convo?.onLive(e);
       if (e.type === 'messages' || e.type === 'chat' || e.type === 'followups') refreshQuiet();
+      if (['messages', 'chat', 'followups', 'channel'].includes(e.type)) refreshTodaySoon();
     },
     onKey(e) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

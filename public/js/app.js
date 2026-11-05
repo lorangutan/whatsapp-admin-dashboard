@@ -103,7 +103,40 @@ function renderRail() {
   addEventListener('resize', moveIndicator);
 }
 
+/**
+ * Red bar while a linked number is down (offline 5+ minutes, or logged out): new chats from it
+ * are not reaching Wamon. Closing it hides it until a different set of numbers is down.
+ */
+let dismissedDown = '';
+function renderDownBar() {
+  const down = store.channels.filter((c) => c.down);
+  const key = down.map((c) => c.id).join(',');
+  let bar = $('#down-bar');
+  const show = down.length > 0 && key !== dismissedDown;
+  document.body.classList.toggle('has-down', show);
+  if (!show) return bar?.remove();
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'down-bar';
+    bar.className = 'down-bar';
+    bar.setAttribute('role', 'alert');
+    document.body.append(bar);
+  }
+  const names = down.map((c) => `<b>${esc(c.agentName)}</b>`).join(', ');
+  bar.innerHTML = `${icon('alert', 17)}
+    <span>${t(down.length > 1 ? 'Nomor {names} terputus. Chat baru tidak masuk ke Wamon.' : 'Nomor {names} terputus. Chat baru dari nomor ini tidak masuk ke Wamon.', { names })}</span>
+    <button class="btn small" type="button" data-go>${t('Hubungkan ulang')}</button>
+    <button class="icon-btn" type="button" data-close aria-label="${t('Tutup')}">${icon('x', 16)}</button>`;
+  bar.querySelector('[data-go]').onclick = () => navigate('#/numbers');
+  bar.querySelector('[data-close]').onclick = () => {
+    dismissedDown = key;
+    bar.remove();
+    document.body.classList.remove('has-down');
+  };
+}
+
 async function refreshBadges() {
+  renderDownBar();
   const offline = store.channels.filter((c) => c.status !== 'connected' && c.status !== 'qr').length;
   $('#offline-badge')?.classList.toggle('hidden', !offline);
   try {

@@ -171,6 +171,14 @@ export interface ShopPrefs {
   autoResolveOnClose: boolean;
   /** Optional metrics in Laporan and the nightly report; "dibalas tepat waktu" always shows. */
   metrics: { firstResponse: boolean; median: boolean; resolution: boolean; deals: boolean };
+  /** WhatsApp the owner when a linked number drops, and again when it is back. */
+  alertDisconnect: boolean;
+  /** "HH:MM" shop time for the morning to-do list, or null for none. */
+  morningTime: string | null;
+  /** Also send each salesperson their own list, to the number they linked. */
+  morningToSales: boolean;
+  /** A lead in a working stage with no message or stage change for this many days counts as gone quiet. */
+  staleDays: number;
 }
 
 export const defaultPrefs: ShopPrefs = {
@@ -179,6 +187,10 @@ export const defaultPrefs: ShopPrefs = {
   conversationGapHours: 24,
   autoResolveOnClose: true,
   metrics: { firstResponse: true, median: true, resolution: true, deals: true },
+  alertDisconnect: true,
+  morningTime: '08:00',
+  morningToSales: false,
+  staleDays: 3,
 };
 
 /** owner: everything in their shop. demo: explore freely, but no WhatsApp linking, sending or settings. */

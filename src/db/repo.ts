@@ -539,6 +539,7 @@ export async function deleteNote(db: Db, id: number) {
 export interface Followup {
   id: number;
   chatId: number;
+  channelId: number;
   dueAt: Date;
   note: string | null;
   doneAt: Date | null;
@@ -557,7 +558,7 @@ export function listFollowups(db: Db, shopId: number, opts: { chatId?: number; i
   }
   if (!opts.includeDone) where.push('f.done_at IS NULL');
   return db.query<Followup>(
-    `SELECT f.id, f.chat_id AS chatId, f.due_at AS dueAt, f.note, f.done_at AS doneAt,
+    `SELECT f.id, f.chat_id AS chatId, c.channel_id AS channelId, f.due_at AS dueAt, f.note, f.done_at AS doneAt,
             c.contact_name AS contactName, c.remote_jid AS remoteJid, ch.agent_name AS agentName, c.stage
        FROM followups f JOIN chats c ON c.id = f.chat_id JOIN channels ch ON ch.id = c.channel_id
       WHERE ${where.join(' AND ')}
@@ -659,5 +660,34 @@ export function chatsById(db: Db, ids: number[]) {
   return db.query<{ id: number; contactName: string | null; remoteJid: string }>(
     'SELECT id, contact_name AS contactName, remote_jid AS remoteJid FROM chats WHERE id IN (?)',
     [ids],
+  );
+}
+
+export interface StaleLead {
+  chatId: number;
+  channelId: number;
+  agentName: string;
+  contactName: string | null;
+  remoteJid: string;
+  stage: string;
+  lastActivityAt: Date;
+}
+
+/**
+ * Leads in a working stage with no message and no stage change since `idleSince`, and nothing planned:
+ * a lead with an open follow-up is waiting on purpose, so it is left out.
+ */
+export function staleLeads(db: Db, shopId: number, stageIds: string[], idleSince: Date): Promise<StaleLead[]> {
+  if (!stageIds.length) return Promise.resolve([]);
+  const activity = 'GREATEST(COALESCE(c.last_message_at, c.stage_changed_at), COALESCE(c.stage_changed_at, c.last_message_at))';
+  return db.query<StaleLead>(
+    `SELECT c.id AS chatId, c.channel_id AS channelId, ch.agent_name AS agentName, c.contact_name AS contactName,
+            c.remote_jid AS remoteJid, c.stage, ${activity} AS lastActivityAt
+       FROM chats c JOIN channels ch ON ch.id = c.channel_id
+      WHERE ch.shop_id = ? AND c.stage IN (${stageIds.map(() => '?').join(', ')}) AND ${activity} < ?
+        AND NOT EXISTS (SELECT 1 FROM followups f WHERE f.chat_id = c.id AND f.done_at IS NULL)
+      ORDER BY lastActivityAt
+      LIMIT 50`,
+    [shopId, ...stageIds, idleSince],
   );
 }
