@@ -179,7 +179,7 @@ function showLogin() {
       </div>
       <div class="logo">${icon('chat', 26)}</div>
       <h1>Wamon</h1>
-      <p class="muted">${t('Masuk untuk melihat chat dan laporan')}</p>
+      <p class="muted">${t('Dashboard WhatsApp untuk retail toko emas, semua chat sales counter dan host live di satu layar')}</p>
       <input class="input" name="username" placeholder="${t('Username')}" autocomplete="username" autocapitalize="none" spellcheck="false" required>
       <input class="input" type="password" name="password" placeholder="${t('Password')}" autocomplete="current-password" required>
       <div class="login-error bad small" role="alert"></div>

@@ -141,7 +141,7 @@ export class BaileysAdapter implements ChannelAdapter {
     const named = contacts
       .map((c) => ({
         jids: [c.id, c.lid, c.phoneNumber].filter((j): j is string => Boolean(j)).map(jidNormalizedUser),
-        // The name the agent saved ("Pak Rudi Vario") beats the customer's own profile name.
+        // The name the agent saved ("Bu Lina kalung") beats the customer's own profile name.
         name: c.name || c.notify || c.verifiedName,
       }))
       .filter((c): c is { jids: string[]; name: string } => Boolean(c.name) && c.jids.length > 0);

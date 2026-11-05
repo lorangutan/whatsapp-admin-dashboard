@@ -43,7 +43,7 @@ export function mountInbox({ app, list, main, navigate }) {
   list.innerHTML = `
     <div class="pane-head"><h1>${t('Chat')}</h1><span class="count" id="ib-count"></span></div>
     <button class="today-strip" type="button" id="ib-today" hidden></button>
-    <label class="search">${icon('search', 17)}<input id="ib-q" placeholder="${t('Cari nama, nomor, unit…')}" value="${esc(filter.q)}" autocomplete="off"><kbd>Ctrl K</kbd></label>
+    <label class="search">${icon('search', 17)}<input id="ib-q" placeholder="${t('Cari nama, nomor, barang…')}" value="${esc(filter.q)}" autocomplete="off"><kbd>Ctrl K</kbd></label>
     <div class="chips" id="ib-chips"></div>
     <div class="list" id="ib-list" role="listbox" aria-label="${t('Daftar chat')}"></div>`;
   const listEl = $('#ib-list', list);

@@ -1,6 +1,6 @@
 # Wamon
 
-WhatsApp sales CRM + response-time (SLA) reports for small dealers, bengkel and motor bekas sellers.
+WhatsApp sales CRM + response-time (SLA) reports for gold jewellery shops (toko emas): counter sales and live-selling hosts in one inbox.
 Each sales agent links their own WhatsApp number; the owner sees every chat, replies from the
 dashboard, tracks each lead through a pipeline, and gets a daily summary on WhatsApp.
 
@@ -74,11 +74,11 @@ route checks it). The owner logs in as `admin` (or `ADMIN_USERNAME`) with `ADMIN
 first shop. More logins, e.g. one per customer shop:
 
 ```bash
-npm run user -- budi s3cret --shop "Bengkel Budi"           # owner of a new or existing shop
-npm run user -- tamu tamu123 --shop "Demo Bengkel" --role demo
+npm run user -- budi s3cret --shop "Toko Emas Budi"        # owner of a new or existing shop
+npm run user -- tamu tamu123 --shop "Demo Toko Emas" --role demo
 ```
 
-`npm run seed` creates the **Demo Bengkel** shop with fake data and the public `demo` / `demo` login.
+`npm run seed` creates the **Demo Toko Emas** shop with fake data and the public `demo` / `demo` login.
 The **demo** role can explore and move leads but can't link numbers, send messages or change settings.
 
 The interface is in Bahasa Indonesia or English (switch on the login screen, in Settings or with Ctrl+K).
@@ -88,8 +88,8 @@ Texts live in the code in Indonesian; `public/js/i18n.js` holds the English vers
 
 | Area | What it does |
 |---|---|
-| **Inbox** | All numbers in one list: unread badges, "belum dibalas" filter, stage/agent filters, search by name/number/unit, infinite scroll. Reply from the dashboard through the number that owns the chat (optimistic send, retry on failure). `/` opens quick replies. |
-| **Lead panel** | Per chat: stage, unit of interest, deal value, tags, follow-ups, internal notes, editable contact name. |
+| **Inbox** | All numbers in one list: unread badges, "belum dibalas" filter, stage/agent filters, search by name/number/item, infinite scroll. Reply from the dashboard through the number that owns the chat (optimistic send, retry on failure). `/` opens quick replies. |
+| **Lead panel** | Per chat: stage, item of interest, deal value, tags, follow-ups, internal notes, editable contact name. |
 | **Lead capture** | A live message from a customer whose chat isn't triaged yet becomes a lead in "Baru". History-imported chats stay out of the pipeline until you add them. "Bukan lead" keeps friends/family out for good. |
 | **Pipeline** | Kanban by stage with value totals and time-in-stage; drag & drop or right-click to move, with undo. |
 | **Follow-up** | Reminders grouped Terlambat / Hari ini / Besok / Nanti; tick to complete; badge on the rail when due. |

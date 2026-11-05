@@ -25,7 +25,7 @@ export const CONVERSATION_GAP_MS = 24 * 60 * 60_000;
 
 /**
  * Splits one chat into customer → agent turns. A burst of customer messages ("halo", "gan",
- * "vario 2019 masih ada?") is a single turn that starts at its first message and ends at the
+ * "kalung 5 gram masih ada?") is a single turn that starts at its first message and ends at the
  * first agent reply after it. Agent messages with nothing pending (follow-ups, broadcasts) are ignored.
  */
 export function buildTurns(messages: SlaMessage[], clock: ShopClock, gapMs = CONVERSATION_GAP_MS): Turn[] {

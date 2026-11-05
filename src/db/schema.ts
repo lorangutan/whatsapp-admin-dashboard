@@ -17,26 +17,27 @@ export interface Stage {
   outcome?: 'won' | 'lost';
 }
 
-/** The usual path of a motor bekas sale. */
+/** The usual path of a jewellery sale over WhatsApp, from the counter or after a live session. */
 export const defaultStages: Stage[] = [
   { id: 'new', name: 'Baru' },
   { id: 'asked', name: 'Tanya harga' },
-  { id: 'visit', name: 'Survey / test ride' },
+  { id: 'model', name: 'Pilih model' },
   { id: 'nego', name: 'Nego' },
-  { id: 'dp', name: 'DP' },
-  { id: 'won', name: 'Deal', outcome: 'won' },
+  { id: 'keep', name: 'Keep / DP' },
+  { id: 'won', name: 'Terjual', outcome: 'won' },
   { id: 'lost', name: 'Batal', outcome: 'lost' },
 ];
 
 export const defaultQuickReplies = [
   { shortcut: 'salam', body: 'Halo kak, terima kasih sudah menghubungi kami 🙏 Ada yang bisa kami bantu?' },
-  { shortcut: 'ready', body: 'Unitnya masih ready kak. Mau lihat langsung atau minta foto/video dulu?' },
+  { shortcut: 'harga', body: 'Harga emas hari ini kak: 24K Rp … /gr, 22K Rp … /gr, 17K Rp … /gr. Mau dicarikan model yang mana?' },
+  { shortcut: 'ready', body: 'Modelnya masih ready kak. Mau dikirim foto/video detail dan beratnya dulu?' },
   {
-    shortcut: 'kredit',
-    body: 'Bisa kredit kak, DP mulai 2 jutaan tergantung leasing. Boleh info domisili dan pekerjaan untuk simulasinya?',
+    shortcut: 'keep',
+    body: 'Bisa di-keep 2 hari kak dengan DP 20%. Pelunasan bisa di toko atau transfer, barang dikirim dengan asuransi.',
   },
-  { shortcut: 'lokasi', body: 'Showroom kami buka Senin–Sabtu 08.00–17.00. Lokasi: (isi alamat & link Google Maps)' },
-  { shortcut: 'surat', body: 'Surat-surat lengkap kak: BPKB, STNK, faktur. Pajak hidup.' },
+  { shortcut: 'buyback', body: 'Perhiasan dari toko kami bisa dijual kembali atau tukar tambah kak, bawa barang dan suratnya ya.' },
+  { shortcut: 'lokasi', body: 'Toko kami buka Senin–Sabtu 08.00–17.00. Lokasi: (isi alamat & link Google Maps)' },
 ];
 
 // MySQL / TiDB schema. All DATETIMEs are UTC (the pool sets time_zone = '+00:00').

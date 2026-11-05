@@ -423,13 +423,13 @@ export function openConversation(host, chatId, { onBack } = {}) {
       </div>
       <div class="sec">
         <h2>${t('Detail')}</h2>
-        <label class="field">${t('Unit diminati')}
-          <input class="input" id="lp-interest" value="${esc(chat.interest ?? '')}" placeholder="${t('mis. Vario 125 2019 hitam')}"></label>
+        <label class="field">${t('Barang diminati')}
+          <input class="input" id="lp-interest" value="${esc(chat.interest ?? '')}" placeholder="${t('mis. Kalung Italy 17K 5 gr')}"></label>
         <label class="field">${t('Nilai deal (Rp)')}
           <input class="input num" id="lp-value" inputmode="numeric" value="${chat.dealValue ? Number(chat.dealValue).toLocaleString(locale()) : ''}" placeholder="17.500.000"></label>
         <label class="field">${t('Tag')}
           <div class="tags-input" id="lp-tags">${tags.map((tag, i) => `<span class="t">${esc(tag)}<button data-i="${i}" aria-label="${t('Hapus tag')}">×</button></span>`).join('')}
-            <input placeholder="${tags.length ? '' : t('kredit, tukar tambah…')}" id="lp-tag-in"></div></label>
+            <input placeholder="${tags.length ? '' : t('dari live, tukar tambah…')}" id="lp-tag-in"></div></label>
       </div>
       <div class="sec">
         <h2>${t('Follow-up')}</h2>

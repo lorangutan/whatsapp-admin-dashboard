@@ -1,4 +1,4 @@
-// Creates (or tops up) the "Demo Bengkel" shop. Safe to re-run.
+// Creates (or tops up) the "Demo Toko Emas" shop. Safe to re-run.
 //   npm run seed              add the demo data if it is missing
 //   npm run seed -- --fresh   delete the demo agents' chats and seed them again relative to now
 import { openDb } from './db/index.js';

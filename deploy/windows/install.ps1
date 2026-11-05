@@ -58,8 +58,8 @@ if (-not (Test-Path $EnvFile)) {
     if ($pw.Contains("'")) { Write-Host "Please avoid the ' character." -ForegroundColor Yellow; continue }
     break
   }
-  $shop = Read-Host 'Shop name [Bengkel Saya]'
-  if (-not $shop) { $shop = 'Bengkel Saya' }
+  $shop = Read-Host 'Shop name [Toko Saya]'
+  if (-not $shop) { $shop = 'Toko Saya' }
 
   $bytes = New-Object byte[] 32
   [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)

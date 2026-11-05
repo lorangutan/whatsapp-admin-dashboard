@@ -1,5 +1,5 @@
-// The "Demo Bengkel" shop: fake chats for 3 sales agents with CRM data, plus a "demo" login
-// (password "demo", demo role) that can only see that shop.
+// The "Demo Toko Emas" shop: fake chats for two counter salespeople and a live-selling host, with
+// CRM data, plus a "demo" login (password "demo", demo role) that can only see that shop.
 // fresh: true deletes the fake agents (and everything in their chats) first and seeds them again
 // relative to now, so the demo always looks like an ordinary working day. Only the fake
 // 62812000… numbers are ever touched, never a real linked number.
@@ -12,9 +12,19 @@ import { defaultBusinessHours, defaultQuickReplies, defaultStages } from './db/s
 import { hashPassword } from './auth.js';
 import type { InboundMessage } from './channels/types.js';
 
-export const DEMO_SHOP = 'Demo Bengkel';
+export const DEMO_SHOP = 'Demo Toko Emas';
+/** The demo used to be a motorbike dealer; that shop (and its demo login) is renamed and reseeded. */
+const OLD_DEMO_SHOP = 'Demo Bengkel';
 
 export async function seedDemo(db: Db, { fresh = false, log = console.log }: { fresh?: boolean; log?: (msg: string) => void } = {}) {
+  const [current] = await db.query('SELECT id FROM shops WHERE name = ?', [DEMO_SHOP]);
+  if (!current) {
+    const renamed = await db.run('UPDATE shops SET name = ? WHERE name = ?', [DEMO_SHOP, OLD_DEMO_SHOP]);
+    if (renamed.affectedRows) {
+      log(`Renamed ${OLD_DEMO_SHOP} to ${DEMO_SHOP}`);
+      fresh = true; // its chats are about motorbikes
+    }
+  }
   const shop = { id: await ensureShop(db, DEMO_SHOP, { businessHours: defaultBusinessHours, stages: defaultStages, quickReplies: defaultQuickReplies }) };
   await upsertUser(db, 'demo', hashPassword('demo'), shop.id, 'demo');
   log(`Demo shop #${shop.id}, login demo / demo`);
@@ -23,25 +33,46 @@ export async function seedDemo(db: Db, { fresh = false, log = console.log }: { f
     const fake = (await listChannels(db, shop.id)).filter((c) => c.phone?.startsWith('62812000'));
     for (const c of fake) await deleteChannel(db, c.id);
     log(`Removed ${fake.length} demo agents to seed them again`);
+    // Back to the default stages and quick replies, in case they changed since the last seed.
+    await db.run('UPDATE shops SET pipeline_stages = ? WHERE id = ?', [JSON.stringify(defaultStages), shop.id]);
+    await db.run('DELETE FROM quick_replies WHERE shop_id = ?', [shop.id]);
+    for (const r of defaultQuickReplies) {
+      await db.run('INSERT INTO quick_replies (shop_id, shortcut, body) VALUES (?, ?, ?)', [shop.id, r.shortcut, r.body]);
+    }
   }
 
-  const customers = ['Pak Rudi', 'Mas Dimas', 'Bu Sari', 'Agus', 'Rizky', 'Hendra', 'Yoga', 'Fajar', 'Dewi', 'Bayu'];
-  const asks = [
-    'Gan, Vario 2019 masih ada?',
-    'Harga nett berapa ya?',
-    'Bisa kredit? DP minimal berapa',
-    'Surat lengkap? Pajak hidup?',
-    'Bisa tukar tambah Beat lama saya?',
-    'Servis CVT berapa ongkosnya',
-    'Besok bisa lihat unit jam berapa?',
+  const customers = ['Bu Lina', 'Ci Melly', 'Pak Hasan', 'Mbak Ayu', 'Bu Ratna', 'Koh Willy', 'Nita', 'Bu Endang', 'Putri', 'Pak Bambang'];
+  const counterAsks = [
+    'Kak, harga emas 24K hari ini berapa per gram?',
+    'Kalung Italy 17K yang 5 gram masih ready?',
+    'Kalau jual kembali potongannya berapa?',
+    'Bisa tukar tambah gelang lama saya?',
+    'Cincin kawin bisa ukir nama?',
+    'Toko buka sampai jam berapa?',
   ];
-  const replies = ['Masih ada kak 🙏', 'Nett 17,5jt kak', 'Bisa, DP mulai 2jt', 'Lengkap kak, pajak panjang', 'Bisa kak, kirim foto unitnya ya', 'Mulai 150rb kak'];
+  const liveAsks = [
+    'Kak, cincin yang di live tadi masih ada?',
+    'Yang nomor 12 di live berapa gram?',
+    'Minta foto & video detailnya dong',
+    'Bisa kirim ke luar kota? Pakai asuransi?',
+    'Bisa keep dulu sampai Sabtu?',
+    'Ongkos bikinnya berapa kak?',
+  ];
+  const replies = [
+    'Ready kak 🙏',
+    '24K hari ini 2,35jt/gr kak',
+    'Ini fotonya kak, beratnya 5,02 gr',
+    'Bisa kak, dikirim pakai asuransi',
+    'Bisa kak, bawa barang dan suratnya ya',
+    'Bisa keep 2 hari kak dengan DP',
+  ];
 
   // Each agent has a typical response speed (minutes) and a chance of leaving a chat unanswered.
+  // The live host is the slowest: chats pile up while they are on air.
   const agents = [
-    { name: 'Andi', speed: 4, ignore: 0.05 },
-    { name: 'Budi', speed: 18, ignore: 0.2 },
-    { name: 'Citra', speed: 9, ignore: 0.1 },
+    { name: 'Sari · Counter', speed: 4, ignore: 0.05, asks: counterAsks },
+    { name: 'Mega · Live', speed: 18, ignore: 0.2, asks: liveAsks },
+    { name: 'Dewi · Counter', speed: 9, ignore: 0.1, asks: counterAsks },
   ];
 
   let rng = 42;
@@ -79,7 +110,7 @@ export async function seedDemo(db: Db, { fresh = false, log = console.log }: { f
         for (let turn = 0; turn < 1 + Math.floor(rand() * 3); turn++) {
           const burst = 1 + Math.floor(rand() * 2);
           for (let b = 0; b < burst; b++) {
-            messages.push({ waId: `seed-${ai}-${seq++}`, remoteJid: jid, contactName: customer, fromMe: false, kind: 'text', body: pick(asks), sentAt: new Date(t) });
+            messages.push({ waId: `seed-${ai}-${seq++}`, remoteJid: jid, contactName: customer, fromMe: false, kind: 'text', body: pick(agent.asks), sentAt: new Date(t) });
             t += 30_000 + rand() * 60_000;
           }
           if (rand() < agent.ignore) break;
@@ -95,10 +126,10 @@ export async function seedDemo(db: Db, { fresh = false, log = console.log }: { f
   }
 
   // CRM demo data on the fake agents' chats only (never on a real linked number).
-  const units = ['Vario 125 2019', 'Beat Street 2021', 'NMAX 2020', 'Scoopy 2022', 'Aerox 155 2019', 'PCX 160 2021', 'CBR150R 2018'];
-  const prices = [17_500_000, 14_200_000, 24_900_000, 18_300_000, 19_750_000, 27_000_000, 21_500_000];
-  const tagPool = ['kredit', 'cash', 'tukar tambah', 'luar kota', 'minta video'];
-  const stageCycle = ['new', 'asked', 'asked', 'visit', 'nego', 'dp', 'won', 'lost', 'new', 'asked'];
+  const units = ['Cincin 17K 3 gr', 'Kalung Italy 17K 5 gr', 'Gelang rantai 22K 10 gr', 'Liontin huruf 17K 2 gr', 'Anting anak 8K 1,5 gr', 'Logam mulia 24K 5 gr', 'Cincin kawin 18K sepasang'];
+  const prices = [4_650_000, 7_900_000, 21_800_000, 3_150_000, 1_350_000, 11_900_000, 9_600_000];
+  const tagPool = ['dari live', 'tukar tambah', 'buyback', 'kirim luar kota', 'minta video'];
+  const stageCycle = ['new', 'asked', 'asked', 'model', 'nego', 'keep', 'won', 'lost', 'new', 'asked'];
   const demoChannels = (await listChannels(db, shop.id)).filter((c) => agents.some((a) => a.name === c.agentName));
   let enriched = 0;
   for (const ch of demoChannels) {
@@ -117,7 +148,7 @@ export async function seedDemo(db: Db, { fresh = false, log = console.log }: { f
       });
       // A working lead whose customer went silent 3+ days ago, with nothing planned: shows under
       // "lead diam" in Hari ini. Every other lead spreads its "time in stage" over the last few days.
-      const quiet = ['asked', 'visit', 'nego'].includes(stage) && now - new Date(lastMessageAt).getTime() > 3.2 * 86_400_000;
+      const quiet = ['asked', 'model', 'nego'].includes(stage) && now - new Date(lastMessageAt).getTime() > 3.2 * 86_400_000;
       if (quiet) {
         await db.run('UPDATE chats SET stage_changed_at = last_message_at + INTERVAL 2 HOUR WHERE id = ?', [id]);
       } else {
@@ -126,12 +157,12 @@ export async function seedDemo(db: Db, { fresh = false, log = console.log }: { f
           id,
         ]);
       }
-      if (!quiet && ['asked', 'visit', 'nego', 'dp'].includes(stage) && rand() < 0.7) {
+      if (!quiet && ['asked', 'model', 'nego', 'keep'].includes(stage) && rand() < 0.7) {
         const due = new Date(now + (rand() * 4 - 1.2) * 86_400_000); // some overdue, some upcoming
         due.setUTCHours(2 + Math.floor(rand() * 8), 0, 0, 0); // on the hour, 09:00–16:00 WIB
-        await addFollowup(db, id, due, pick(['Kabari harga nett', 'Tanya jadi survey?', 'Kirim simulasi kredit', 'Konfirmasi DP']));
+        await addFollowup(db, id, due, pick(['Kabari harga emas hari ini', 'Kirim video detail', 'Tanya jadi ambil?', 'Ingatkan pelunasan keep']));
       }
-      if (rand() < 0.35) await addNote(db, id, pick(['Minta harga nett, nego di 17jt', 'Domisili Bekasi, mau COD', 'Kerja karyawan swasta, slip gaji ada']));
+      if (rand() < 0.35) await addNote(db, id, pick(['Minta ongkos bikin dipotong', 'Domisili Bekasi, mau ambil di toko', 'Ukuran cincin 14, buat hadiah ulang tahun']));
       enriched++;
     }
   }
@@ -139,9 +170,9 @@ export async function seedDemo(db: Db, { fresh = false, log = console.log }: { f
 
   // One lead per agent that went quiet days ago with nothing planned, for "lead diam" in Hari ini.
   const quietLeads = [
-    { name: 'Wawan', stage: 'nego', unit: 'NMAX 2020', price: 24_900_000, ask: 'Kalau 23jt bisa gan?', reply: 'Kami cek dulu ke owner ya kak', last: 'Oke saya tunggu kabarnya' },
-    { name: 'Rina', stage: 'visit', unit: 'Scoopy 2022', price: 18_300_000, ask: 'Sabtu bisa lihat unit?', reply: 'Bisa kak, jam 10 ya', last: 'Sip, nanti saya kabari lagi' },
-    { name: 'Joko', stage: 'asked', unit: 'Vario 125 2019', price: 17_500_000, ask: 'Vario 2019 DP berapa?', reply: 'DP mulai 2jt kak, mau simulasi?', last: 'Boleh, nanti dulu ya' },
+    { name: 'Bu Wati', stage: 'nego', unit: 'Gelang rantai 22K 10 gr', price: 21_800_000, ask: 'Ongkosnya bisa dikurangi kak?', reply: 'Kami cek dulu ke owner ya kak', last: 'Oke saya tunggu kabarnya' },
+    { name: 'Rina', stage: 'model', unit: 'Kalung Italy 17K 5 gr', price: 7_900_000, ask: 'Ada model lain yang lebih tipis?', reply: 'Ada kak, ini 3 pilihannya', last: 'Sip, nanti saya pilih dulu' },
+    { name: 'Pak Joko', stage: 'asked', unit: 'Logam mulia 24K 5 gr', price: 11_900_000, ask: 'LM 5 gram harganya berapa?', reply: '11,9jt kak, ready di toko', last: 'Boleh, nanti dulu ya' },
   ];
   let quietAdded = 0;
   for (const [i, ch] of demoChannels.entries()) {

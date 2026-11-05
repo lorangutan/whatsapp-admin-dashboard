@@ -58,14 +58,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "==> Secrets (typed here, stored only in $ENV_FILE)"
   read -rp  "TiDB DATABASE_URL (mysql://user:pass@host:4000/wamon): " DATABASE_URL
   read -rsp "Dashboard password: " ADMIN_PASSWORD; echo
-  read -rp  "Shop name [Bengkel Saya]: " SHOP_NAME
+  read -rp  "Shop name [Toko Saya]: " SHOP_NAME
   cat > "$ENV_FILE" <<EOF
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=3000
 TRUST_PROXY=true
 DATA_DIR=$DATA_DIR
-SHOP_NAME=${SHOP_NAME:-Bengkel Saya}
+SHOP_NAME=${SHOP_NAME:-Toko Saya}
 DATABASE_URL=$DATABASE_URL
 ADMIN_PASSWORD=$ADMIN_PASSWORD
 SESSION_SECRET=$(openssl rand -hex 32)

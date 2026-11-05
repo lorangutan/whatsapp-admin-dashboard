@@ -23,7 +23,7 @@ export const config = {
   sessionSecret: process.env.SESSION_SECRET || randomBytes(32).toString('hex'),
   /** Behind a reverse proxy (Caddy) the client IP and protocol come from X-Forwarded-* headers. */
   trustProxy: process.env.TRUST_PROXY === 'true',
-  shopName: process.env.SHOP_NAME ?? 'Bengkel Saya',
+  shopName: process.env.SHOP_NAME ?? 'Toko Saya',
 };
 
 // In production Caddy proxies to 127.0.0.1, so "loopback" alone doesn't mean private.
