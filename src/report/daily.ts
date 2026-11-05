@@ -5,6 +5,7 @@ import { getShop, listShopIds, type Shop } from '../db/repo.js';
 import { localDayStart, toLocalWallClock } from '../sla/businessHours.js';
 import { buildReport, shopClock, type Report } from './service.js';
 import { sendMorningList } from './today.js';
+import { DEMO_SHOP, seedDemo } from '../demo.js';
 
 export function formatDuration(ms: number | null): string {
   if (ms === null) return '-';
@@ -73,7 +74,10 @@ export async function sendDailyReport(db: Db, channels: ChannelManager, shopId: 
   await channels.sendFromAny(shop.id, shop.ownerWa, formatDailyReport(shop, report));
 }
 
-/** Checks once a minute, for every shop, whether it's time for the morning list or the evening report. */
+/**
+ * Checks once a minute, for every shop, whether it's time for the morning list or the evening report.
+ * The demo shop is also seeded again each night, so visitors always see an ordinary working day.
+ */
 export function scheduleDailyReport(db: Db, channels: ChannelManager, log: FastifyBaseLogger) {
   const lastSent = new Map<string, string>();
   const due = (key: string, time: string | null, local: string) => {
@@ -91,6 +95,16 @@ export function scheduleDailyReport(db: Db, channels: ChannelManager, log: Fasti
         continue;
       }
       const local = toLocalWallClock(new Date(), shopClock(shop)).toISOString(); // YYYY-MM-DDTHH:MM
+      if (shop.name === DEMO_SHOP) {
+        if (due(`demo-${shopId}`, '04:00', local)) {
+          try {
+            await seedDemo(db, { fresh: true, log: (msg) => log.info(msg) });
+          } catch (err) {
+            log.error({ err }, 'demo refresh failed');
+          }
+        }
+        continue; // its numbers are fake, so it never sends anything
+      }
       if (due(`morning-${shopId}`, shop.prefs.morningTime, local)) {
         try {
           const sent = await sendMorningList(db, channels, shopId);

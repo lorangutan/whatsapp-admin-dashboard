@@ -37,6 +37,7 @@ export function t(text, vars) {
 }
 
 const EN = {
+  'Akun demo: hanya bisa dilihat': 'Demo account: view only',
   "Tutup": "Close",
   "Pengingat & peringatan": "Reminders & alerts",
   "Kirim WA ke owner kalau nomor sales terputus lebih dari 5 menit, dan saat tersambung lagi": "WhatsApp the owner when a sales number is down for over 5 minutes, and when it is back",

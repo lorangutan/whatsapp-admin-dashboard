@@ -72,9 +72,9 @@ export function mountSettings({ main }) {
         </form>
       </div>
 
-      <div class="card owner-only settings-card" id="st-alerts"></div>
-      <div class="card owner-only settings-card" id="st-metrics"></div>
-      <div class="card owner-only settings-card" id="st-stages"></div>
+      <div class="card settings-card" id="st-alerts"></div>
+      <div class="card settings-card" id="st-metrics"></div>
+      <div class="card settings-card" id="st-stages"></div>
     </div>
   </div>`;
 

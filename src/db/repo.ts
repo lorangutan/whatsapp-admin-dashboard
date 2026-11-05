@@ -178,6 +178,7 @@ export async function deleteChannel(db: Db, id: number) {
   await db.run('DELETE m FROM messages m JOIN chats c ON c.id = m.chat_id WHERE c.channel_id = ?', [id]);
   await db.run('DELETE n FROM notes n JOIN chats c ON c.id = n.chat_id WHERE c.channel_id = ?', [id]);
   await db.run('DELETE f FROM followups f JOIN chats c ON c.id = f.chat_id WHERE c.channel_id = ?', [id]);
+  await db.run('DELETE r FROM resolutions r JOIN chats c ON c.id = r.chat_id WHERE c.channel_id = ?', [id]);
   await db.run('DELETE FROM chats WHERE channel_id = ?', [id]);
   await db.run('DELETE FROM channels WHERE id = ?', [id]);
 }

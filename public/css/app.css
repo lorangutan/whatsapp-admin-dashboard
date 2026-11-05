@@ -606,6 +606,10 @@ button.pill.resolve-btn { padding: 5px 11px; font-size: 12.5px; }
 
 /* Settings: metric preferences and pipeline stage editor */
 .settings-card { display: grid; gap: 12px; }
+.settings-card label.field { align-content: start; }
+.demo-note { display: inline-flex; align-items: center; gap: 6px; justify-self: start; margin-top: -6px; padding: 3px 10px; border-radius: 99px; font-size: 12px; color: var(--warn); background: var(--warn-soft); }
+.settings-card :disabled { cursor: not-allowed; }
+.settings-card .btn:disabled, .settings-card .icon-btn:disabled { opacity: .45; box-shadow: none; }
 .settings label.check { display: flex; gap: 8px; align-items: center; font-size: 13.5px; cursor: pointer; }
 .settings label.check input { accent-color: var(--accent); width: 16px; height: 16px; }
 .settings .checks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 4px; color: var(--text); }

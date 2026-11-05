@@ -21,6 +21,20 @@ async function saveShop(patch, done) {
   }
 }
 
+/**
+ * The demo account sees these cards so visitors know what a shop can set, but cannot change them
+ * (the server refuses anyway). Buttons listed in `keep` only read, so they stay usable.
+ */
+function lockForDemo(host, keep = []) {
+  if (store.session?.role !== 'demo') return;
+  for (const el of host.querySelectorAll('input, select, textarea, button')) {
+    if (!keep.includes(el.id)) el.disabled = true;
+  }
+  if (!host.querySelector('.demo-note')) {
+    host.querySelector('h2')?.insertAdjacentHTML('afterend', `<div class="demo-note">${icon('eye', 14)} ${t('Akun demo: hanya bisa dilihat')}</div>`);
+  }
+}
+
 /** Ids stay fixed when a stage is renamed, so leads keep their stage; new stages get a fresh id. */
 function newStageId(name) {
   const slug = name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'tahap';
@@ -52,6 +66,7 @@ export function mountStageEditor(host) {
         <button class="btn" type="button" id="stg-save">${t('Simpan tahap')}</button>
       </div>
       <p class="faint small" id="stg-note" hidden></p>`;
+    lockForDemo(host);
 
     for (const inp of $$('[data-name]', host)) inp.oninput = () => (rows[Number(inp.dataset.name)].name = inp.value);
     for (const sel of $$('[data-outcome]', host)) {
@@ -117,6 +132,7 @@ export function mountMetricSettings(host) {
       <div class="checks">${box('firstResponse', t('Respon pertama'))}${box('median', t('Median balas'))}${box('resolution', t('Tuntas'))}${box('deals', t('Deal'))}</div>
       <span class="faint small">${t('"Dibalas tepat waktu" selalu tampil.')}</span></div>
     <div><button class="btn" type="button" id="mt-save">${t('Simpan metrik')}</button></div>`;
+  lockForDemo(host);
 
   const preview = () => {
     const good = Number($('#mt-good', host).value) || 0;
@@ -162,6 +178,7 @@ export function mountAlertSettings(host) {
       <button class="btn ghost" type="button" id="al-send">${t('Kirim sekarang')}</button>
     </div>
     <pre class="report-preview" id="al-out" hidden></pre>`;
+  lockForDemo(host, ['al-preview']);
 
   $('#al-save', host).onclick = () => {
     p.alertDisconnect = $('#al-down', host).checked;
