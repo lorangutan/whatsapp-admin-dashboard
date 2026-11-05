@@ -128,7 +128,7 @@ export function leadMenu(chat, { onOpen } = {}) {
     ...(chat.unread ? [{ label: t('Tandai sudah dibaca'), icon: 'eye', onClick: () => markRead(chat) }] : []),
     { label: t('Salin nomor'), icon: 'copy', onClick: () => copy(phoneOf(chat.remoteJid)) },
     chat.stage === 'none'
-      ? { label: t('Jadikan lead'), icon: 'plus', onClick: () => moveStage(chat, 'new') }
+      ? { label: t('Jadikan lead'), icon: 'plus', onClick: () => moveStage(chat, stages()[0]?.id ?? 'new') }
       : { label: t('Bukan lead'), icon: 'ban', danger: true, onClick: () => moveStage(chat, 'none') },
   ];
 }

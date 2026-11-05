@@ -2,7 +2,7 @@ import type { Db } from '../db/index.js';
 import { chatsById, closedInPeriod, listChannels, loadResolutions, loadSlaRows, pipelineTotals, type Shop } from '../db/repo.js';
 import type { Stage } from '../db/schema.js';
 import { businessMs, MINUTE, type ShopClock } from '../sla/businessHours.js';
-import { buildTurns, CONVERSATION_GAP_MS, type Turn } from '../sla/turns.js';
+import { buildTurns, type Turn } from '../sla/turns.js';
 import { summarize, type Period, type SlaSummary } from '../sla/summary.js';
 import { resolutionSummary, type ResolutionSummary } from '../sla/resolution.js';
 
@@ -54,7 +54,9 @@ export async function buildReport(db: Db, shop: Shop, period: Period, now = new 
   const clock = shopClock(shop);
   const targetMs = shop.slaTargetMinutes * MINUTE;
   // Look back one conversation gap so we know whether a turn early in the period opens a conversation.
-  const rows = await loadSlaRows(db, shop.id, new Date(period.from.getTime() - CONVERSATION_GAP_MS));
+  // The shop decides how long a silence starts a new conversation (default 24 h).
+  const gapMs = shop.prefs.conversationGapHours * 3_600_000;
+  const rows = await loadSlaRows(db, shop.id, new Date(period.from.getTime() - gapMs));
 
   const byChat = new Map<number, { channelId: number; messages: { fromMe: boolean; sentAt: Date }[] }>();
   for (const r of rows) {
@@ -64,7 +66,7 @@ export async function buildReport(db: Db, shop: Shop, period: Period, now = new 
   }
 
   const resolutionsByChat = new Map<number, Date[]>();
-  for (const r of await loadResolutions(db, shop.id, new Date(period.from.getTime() - CONVERSATION_GAP_MS))) {
+  for (const r of await loadResolutions(db, shop.id, new Date(period.from.getTime() - gapMs))) {
     const list = resolutionsByChat.get(r.chatId) ?? [];
     list.push(new Date(r.resolvedAt));
     resolutionsByChat.set(r.chatId, list);
@@ -75,7 +77,7 @@ export async function buildReport(db: Db, shop: Shop, period: Period, now = new 
   const pending: { chatId: number; channelId: number; turn: Turn }[] = [];
   for (const [chatId, chat] of byChat) {
     const resolutions = resolutionsByChat.get(chatId) ?? [];
-    const turns = handledByResolution(buildTurns(chat.messages, clock), resolutions, clock);
+    const turns = handledByResolution(buildTurns(chat.messages, clock, gapMs), resolutions, clock);
     const list = byChannel.get(chat.channelId) ?? [];
     list.push({ turns, resolutions });
     byChannel.set(chat.channelId, list);

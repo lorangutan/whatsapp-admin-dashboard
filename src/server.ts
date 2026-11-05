@@ -8,6 +8,7 @@ import * as repo from './db/repo.js';
 import { ChannelOfflineError, type ChannelManager } from './channels/manager.js';
 import { bus } from './events.js';
 import { registerAuth } from './auth.js';
+import { defaultPrefs, type ShopPrefs, type Stage } from './db/schema.js';
 import { localDayStart } from './sla/businessHours.js';
 import { buildReport, shopClock } from './report/service.js';
 import { formatDailyReport, sendDailyReport } from './report/daily.js';
@@ -73,8 +74,18 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
   // ---- shop & settings
   app.get('/api/shop', (req) => shopOf(req));
 
-  app.put<{ Body: Partial<Omit<repo.Shop, 'id'>> }>('/api/shop', { preHandler: ownerOnly }, async (req) => {
-    await repo.updateShop(db, req.session.shopId, req.body);
+  app.put<{ Body: Partial<Omit<repo.Shop, 'id'>> }>('/api/shop', { preHandler: ownerOnly }, async (req, reply) => {
+    const body = { ...(req.body ?? {}) };
+    if (body.pipelineStages) {
+      const problem = checkStages(body.pipelineStages);
+      if (problem) return reply.code(400).send({ error: problem });
+      // Leads in a deleted stage move to the first stage instead of disappearing from the pipeline.
+      const kept = new Set(body.pipelineStages.map((s) => s.id));
+      const removed = (await shopOf(req)).pipelineStages.map((s) => s.id).filter((id) => !kept.has(id));
+      await repo.moveLeadsOffStages(db, req.session.shopId, removed, body.pipelineStages[0].id);
+    }
+    if (body.prefs) body.prefs = cleanPrefs(body.prefs);
+    await repo.updateShop(db, req.session.shopId, body);
     return shopOf(req);
   });
 
@@ -174,10 +185,16 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   app.patch<IdParams & { Body: repo.LeadPatch }>('/api/chats/:id', async (req) => {
     const id = await own(req, 'chat', Number(req.params.id));
-    await repo.updateLead(db, id, req.body ?? {});
-    // Reaching Deal or Batal settles the conversation, so it counts as tuntas too.
+    const shop = await shopOf(req);
     const stage = req.body?.stage;
-    if (stage && (await shopOf(req)).pipelineStages.find((s) => s.id === stage)?.outcome) await repo.resolveChat(db, id);
+    if (stage && stage !== 'none' && !shop.pipelineStages.some((s) => s.id === stage)) {
+      throw Object.assign(new Error('tahap tidak dikenal'), { statusCode: 400 });
+    }
+    await repo.updateLead(db, id, req.body ?? {});
+    // Reaching Deal or Batal settles the conversation, so it counts as tuntas too (unless the shop turned that off).
+    if (stage && shop.prefs.autoResolveOnClose && shop.pipelineStages.find((s) => s.id === stage)?.outcome) {
+      await repo.resolveChat(db, id);
+    }
     bus.publish({ shopId: req.session.shopId, type: 'chat', chatId: id });
     return repo.getChat(db, req.session.shopId, id);
   });
@@ -255,4 +272,39 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
   });
 
   return app;
+}
+
+/** Returns why a stage list can't be saved, or null when it's fine. */
+function checkStages(stages: Stage[]): string | null {
+  if (!Array.isArray(stages) || stages.length < 2 || stages.length > 15) return 'Pipeline butuh 2 sampai 15 tahap';
+  const ids = new Set<string>();
+  for (const s of stages) {
+    if (typeof s?.id !== 'string' || !/^[a-z0-9_-]{1,40}$/.test(s.id) || ids.has(s.id)) return 'Ada tahap yang tidak valid';
+    ids.add(s.id);
+    if (typeof s.name !== 'string' || !s.name.trim() || s.name.length > 40) return 'Setiap tahap perlu nama (maks. 40 huruf)';
+    if (s.outcome !== undefined && s.outcome !== 'won' && s.outcome !== 'lost') return 'Ada tahap yang tidak valid';
+  }
+  if (stages[0].outcome) return 'Tahap pertama harus tahap proses (lead baru masuk ke sini)';
+  return null;
+}
+
+const clamp = (v: unknown, min: number, max: number, fallback: number) =>
+  Number.isFinite(Number(v)) ? Math.min(max, Math.max(min, Math.round(Number(v)))) : fallback;
+
+/** Keeps preference values in sensible ranges whatever the client sends. */
+function cleanPrefs(p: Partial<ShopPrefs>): ShopPrefs {
+  const full = repo.withDefaults(p);
+  const slaGoodPct = clamp(full.slaGoodPct, 1, 100, defaultPrefs.slaGoodPct);
+  return {
+    slaGoodPct,
+    slaWarnPct: clamp(full.slaWarnPct, 0, slaGoodPct, Math.min(defaultPrefs.slaWarnPct, slaGoodPct)),
+    conversationGapHours: clamp(full.conversationGapHours, 1, 168, defaultPrefs.conversationGapHours),
+    autoResolveOnClose: Boolean(full.autoResolveOnClose),
+    metrics: {
+      firstResponse: Boolean(full.metrics.firstResponse),
+      median: Boolean(full.metrics.median),
+      resolution: Boolean(full.metrics.resolution),
+      deals: Boolean(full.metrics.deals),
+    },
+  };
 }

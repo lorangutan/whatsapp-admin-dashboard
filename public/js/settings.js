@@ -1,6 +1,7 @@
 // Settings: business hours & SLA, daily report, quick replies.
 import { api, $, $$, esc, icon, toast, THEMES, getThemePref, setThemePref } from './lib.js';
 import { store } from './store.js';
+import { mountStageEditor, mountMetricSettings } from './shop-settings.js';
 import { t, getLang, setLang, LANGS } from './i18n.js';
 
 const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -71,10 +72,8 @@ export function mountSettings({ main }) {
         </form>
       </div>
 
-      <div class="card">
-        <h2>${t('Tahap pipeline')}</h2>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${s.pipelineStages.map((st) => `<span class="pill ${st.outcome === 'won' ? 'won' : st.outcome === 'lost' ? 'lost' : 'stage'}">${esc(t(st.name))}</span>`).join('')}</div>
-      </div>
+      <div class="card owner-only settings-card" id="st-metrics"></div>
+      <div class="card owner-only settings-card" id="st-stages"></div>
     </div>
   </div>`;
 
@@ -90,6 +89,8 @@ export function mountSettings({ main }) {
   markTheme();
   for (const b of $$('[data-lang]', main)) b.onclick = () => setLang(b.dataset.lang);
   $('#st-logout', main).onclick = () => window.dispatchEvent(new Event('wamon-logout'));
+  mountMetricSettings($('#st-metrics', main));
+  mountStageEditor($('#st-stages', main));
 
   const form = $('#st-form', main);
   form.onsubmit = async (e) => {

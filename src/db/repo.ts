@@ -1,7 +1,7 @@
 import type { Db } from './index.js';
 import type { InboundMessage, ChannelStatus } from '../channels/types.js';
 import type { BusinessHours } from '../sla/businessHours.js';
-import type { Role, Stage } from './schema.js';
+import { defaultPrefs, type Role, type ShopPrefs, type Stage } from './schema.js';
 
 export interface Shop {
   id: number;
@@ -12,6 +12,7 @@ export interface Shop {
   ownerWa: string | null;
   reportTime: string | null;
   pipelineStages: Stage[];
+  prefs: ShopPrefs;
 }
 
 export interface Channel {
@@ -26,9 +27,11 @@ const json = <T>(v: unknown): T => (typeof v === 'string' ? JSON.parse(v) : v) a
 
 /** A shop by id, or the first shop (the install owner's) when no id is given. */
 export async function getShop(db: Db, id?: number): Promise<Shop> {
+  const cols = 's.*, ss.settings AS prefs';
+  const from = 'shops s LEFT JOIN shop_settings ss ON ss.shop_id = s.id';
   const [r] = id
-    ? await db.query<Record<string, any>>('SELECT * FROM shops WHERE id = ?', [id])
-    : await db.query<Record<string, any>>('SELECT * FROM shops ORDER BY id LIMIT 1');
+    ? await db.query<Record<string, any>>(`SELECT ${cols} FROM ${from} WHERE s.id = ?`, [id])
+    : await db.query<Record<string, any>>(`SELECT ${cols} FROM ${from} ORDER BY s.id LIMIT 1`);
   if (!r) throw Object.assign(new Error('shop not found'), { statusCode: 404 });
   return {
     id: r.id,
@@ -39,7 +42,13 @@ export async function getShop(db: Db, id?: number): Promise<Shop> {
     ownerWa: r.owner_wa,
     reportTime: r.report_time,
     pipelineStages: json(r.pipeline_stages),
+    prefs: withDefaults(json<Partial<ShopPrefs> | null>(r.prefs)),
   };
+}
+
+/** Stored prefs over the defaults, so settings added later need no data migration. */
+export function withDefaults(p: Partial<ShopPrefs> | null | undefined): ShopPrefs {
+  return { ...defaultPrefs, ...p, metrics: { ...defaultPrefs.metrics, ...p?.metrics } };
 }
 
 export async function updateShop(db: Db, id: number, patch: Partial<Omit<Shop, 'id'>>): Promise<void> {
@@ -53,11 +62,30 @@ export async function updateShop(db: Db, id: number, patch: Partial<Omit<Shop, '
     pipeline_stages: patch.pipelineStages && JSON.stringify(patch.pipelineStages),
   };
   const set = Object.entries(columns).filter(([, v]) => v !== undefined);
-  if (!set.length) return;
-  await db.run(`UPDATE shops SET ${set.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`, [
-    ...set.map(([, v]) => v),
-    id,
-  ]);
+  if (set.length) {
+    await db.run(`UPDATE shops SET ${set.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`, [
+      ...set.map(([, v]) => v),
+      id,
+    ]);
+  }
+  if (patch.prefs) {
+    await db.run(
+      'INSERT INTO shop_settings (shop_id, settings) VALUES (?, ?) ON DUPLICATE KEY UPDATE settings = VALUES(settings)',
+      [id, JSON.stringify(withDefaults(patch.prefs))],
+    );
+  }
+}
+
+/** Leads sitting in stages that were deleted move to `toStage` instead of vanishing from the pipeline. */
+export async function moveLeadsOffStages(db: Db, shopId: number, removed: string[], toStage: string) {
+  if (!removed.length) return 0;
+  const { affectedRows } = await db.run(
+    `UPDATE chats c JOIN channels ch ON ch.id = c.channel_id
+        SET c.stage = ?, c.stage_changed_at = UTC_TIMESTAMP(3)
+      WHERE ch.shop_id = ? AND c.stage IN (?)`,
+    [toStage, shopId, removed],
+  );
+  return affectedRows;
 }
 
 export const listShopIds = async (db: Db) =>
@@ -154,6 +182,15 @@ export async function deleteChannel(db: Db, id: number) {
   await db.run('DELETE FROM channels WHERE id = ?', [id]);
 }
 
+/** New leads land in the shop's first pipeline stage (whatever the shop renamed it to). */
+async function firstStage(db: Db, channelId: number): Promise<string> {
+  const [r] = await db.query<{ stages: unknown }>(
+    'SELECT s.pipeline_stages AS stages FROM shops s JOIN channels ch ON ch.shop_id = s.id WHERE ch.id = ?',
+    [channelId],
+  );
+  return json<Stage[]>(r?.stages)?.[0]?.id ?? 'new';
+}
+
 /** Upserts a chat and returns its id. A name already on the chat (e.g. from the address book) is kept. */
 async function upsertChat(db: Db, channelId: number, remoteJid: string, contactName: string | null) {
   const { insertId } = await db.run(
@@ -211,6 +248,7 @@ export async function saveMessages(db: Db, channelId: number, messages: InboundM
   }
 
   const touched: number[] = [];
+  let newLeadStage: string | undefined;
   for (const [remoteJid, list] of byChat) {
     const name = list.findLast((m) => m.contactName)?.contactName ?? null;
     const chatId = await upsertChat(db, channelId, remoteJid, name);
@@ -224,7 +262,9 @@ export async function saveMessages(db: Db, channelId: number, messages: InboundM
     touched.push(chatId);
     const firstLive = list.find((m) => m.live && !m.fromMe);
     if (firstLive) {
-      await db.run(`UPDATE chats SET stage = 'new', stage_changed_at = ? WHERE id = ? AND stage IS NULL`, [
+      newLeadStage ??= await firstStage(db, channelId);
+      await db.run('UPDATE chats SET stage = ?, stage_changed_at = ? WHERE id = ? AND stage IS NULL', [
+        newLeadStage,
         firstLive.sentAt,
         chatId,
       ]);

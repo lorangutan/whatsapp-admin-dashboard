@@ -139,6 +139,12 @@ CREATE TABLE IF NOT EXISTS resolutions (
   KEY idx_resolutions_chat (chat_id, resolved_at)
 );
 
+-- Per-shop metric preferences as JSON (see ShopPrefs). A shop with no row uses defaultPrefs.
+CREATE TABLE IF NOT EXISTS shop_settings (
+  shop_id  INT PRIMARY KEY,
+  settings JSON NOT NULL
+);
+
 -- Dashboard accounts. Each belongs to one shop and only ever sees that shop's data.
 -- The owner login from ADMIN_PASSWORD is not stored here (it always belongs to the first shop).
 -- Note: statements are split on semicolons, so comments in this file must not contain one.
@@ -152,6 +158,28 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE KEY uq_users_username (username)
 )
 `;
+
+/** How a shop wants its metrics judged and shown. */
+export interface ShopPrefs {
+  /** SLA % at or above this is green… */
+  slaGoodPct: number;
+  /** …at or above this is amber, below it red. */
+  slaWarnPct: number;
+  /** Silence longer than this starts a new conversation (first response, tuntas). */
+  conversationGapHours: number;
+  /** Moving a lead to a Deal/Batal stage marks the chat tuntas. */
+  autoResolveOnClose: boolean;
+  /** Optional metrics in Laporan and the nightly report; "dibalas tepat waktu" always shows. */
+  metrics: { firstResponse: boolean; median: boolean; resolution: boolean; deals: boolean };
+}
+
+export const defaultPrefs: ShopPrefs = {
+  slaGoodPct: 85,
+  slaWarnPct: 60,
+  conversationGapHours: 24,
+  autoResolveOnClose: true,
+  metrics: { firstResponse: true, median: true, resolution: true, deals: true },
+};
 
 /** owner: everything in their shop. demo: explore freely, but no WhatsApp linking, sending or settings. */
 export type Role = 'owner' | 'demo';

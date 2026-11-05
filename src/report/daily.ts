@@ -23,17 +23,21 @@ export function formatDailyReport(shop: Shop, report: Report): string {
     year: 'numeric',
   });
   const t = report.totals;
+  const m = shop.prefs.metrics;
   const lines = [
     `📊 *Laporan Chat — ${shop.name}*`,
     day,
     '',
     `Chat masuk: ${t.chats} (${t.conversations} percakapan baru)`,
     `Dibalas ≤${report.targetMinutes} mnt: ${t.slaPct ?? '-'}%`,
-    `Rata-rata respon pertama: ${formatDuration(t.avgFirstResponseMs)}`,
-    `Masalah tuntas: ${t.resolutionPct ?? '-'}%${t.medianResolutionMs != null ? ` (median ${formatDuration(t.medianResolutionMs)})` : ''}`,
+    ...(m.firstResponse ? [`Rata-rata respon pertama: ${formatDuration(t.avgFirstResponseMs)}`] : []),
+    ...(m.resolution
+      ? [`Masalah tuntas: ${t.resolutionPct ?? '-'}%${t.medianResolutionMs != null ? ` (median ${formatDuration(t.medianResolutionMs)})` : ''}`]
+      : []),
     `Belum dibalas: ${t.overdue + t.waiting}`,
-    `Deal: ${report.pipeline.wonCount}` +
-      (report.pipeline.wonValue ? ` (Rp ${report.pipeline.wonValue.toLocaleString('id-ID')})` : ''),
+    ...(m.deals
+      ? [`Deal: ${report.pipeline.wonCount}` + (report.pipeline.wonValue ? ` (Rp ${report.pipeline.wonValue.toLocaleString('id-ID')})` : '')]
+      : []),
   ];
 
   const ranked = report.agents
@@ -42,9 +46,9 @@ export function formatDailyReport(shop: Shop, report: Report): string {
   if (ranked.length) {
     lines.push('', '*Per sales:*');
     ranked.forEach((a, i) => {
-      const warn = a.overdue > 0 || (a.slaPct ?? 100) < 70 ? ' ⚠️' : '';
+      const warn = a.overdue > 0 || (a.slaPct ?? 100) < shop.prefs.slaWarnPct ? ' ⚠️' : '';
       lines.push(
-        `${i + 1}. ${a.agentName} — ${a.slaPct ?? '-'}% · median ${formatDuration(a.medianResponseMs)} · ${a.overdue} telat${warn}`,
+        `${i + 1}. ${a.agentName} — ${a.slaPct ?? '-'}%${m.median ? ` · median ${formatDuration(a.medianResponseMs)}` : ''} · ${a.overdue} telat${warn}`,
       );
     });
   }

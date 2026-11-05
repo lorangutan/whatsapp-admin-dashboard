@@ -134,7 +134,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
     $('#cv-who', head).onclick = () => togglePanel(true);
     $('#cv-toggle', head).onclick = () => togglePanel();
     $('#cv-stage', head).onclick = (e) => {
-      if (!chat.stage || chat.stage === 'none') return patchLead(chat, { stage: 'new' });
+      if (!chat.stage || chat.stage === 'none') return patchLead(chat, { stage: stages()[0]?.id ?? 'new' });
       const r = e.currentTarget.getBoundingClientRect();
       showMenu(r.left, r.bottom + 6, leadMenu(chat));
     };
