@@ -96,7 +96,11 @@ export function scheduleDailyReport(db: Db, channels: ChannelManager, log: Fasti
       }
       const local = toLocalWallClock(new Date(), shopClock(shop)).toISOString(); // YYYY-MM-DDTHH:MM
       if (shop.name === DEMO_SHOP) {
-        if (due(`demo-${shopId}`, '04:00', local)) {
+        // Any time after 04:00 rather than exactly 04:00, so a laptop that slept through the night
+        // still refreshes the demo as soon as it wakes (and once after every restart).
+        const day = local.slice(0, 10);
+        if (local.slice(11, 16) >= '04:00' && lastSent.get(`demo-${shopId}`) !== day) {
+          lastSent.set(`demo-${shopId}`, day);
           try {
             await seedDemo(db, { fresh: true, log: (msg) => log.info(msg) });
           } catch (err) {

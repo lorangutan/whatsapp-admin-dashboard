@@ -84,7 +84,7 @@ export function mountPipeline({ main, navigate }) {
     const due = l.nextFollowupAt ? new Date(l.nextFollowupAt) : null;
     return `<div class="deal" draggable="true" data-id="${l.id}" tabindex="0">
       <div class="top"><span class="nm">${esc(chatName(l))}</span>${l.dealValue ? `<span class="val">${esc(rp(l.dealValue))}</span>` : ''}</div>
-      ${l.interest ? `<div class="row">${icon('bike', 14)} ${esc(l.interest)}</div>` : ''}
+      ${l.interest ? `<div class="row">${icon('tag', 14)} ${esc(l.interest)}</div>` : ''}
       <div class="row">
         <span class="tag">${esc(l.agentName)}</span>
         ${days != null ? `<span title="${t('Lama di tahap ini')}">${esc(dur(days))}</span>` : ''}

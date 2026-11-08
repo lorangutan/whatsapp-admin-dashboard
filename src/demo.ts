@@ -41,7 +41,12 @@ export async function seedDemo(db: Db, { fresh = false, log = console.log }: { f
     }
   }
 
-  const customers = ['Bu Lina', 'Ci Melly', 'Pak Hasan', 'Mbak Ayu', 'Bu Ratna', 'Koh Willy', 'Nita', 'Bu Endang', 'Putri', 'Pak Bambang'];
+  // Each sales number has its own regulars, so the inbox doesn't list the same name three times.
+  const customerPools = [
+    ['Bu Lina', 'Ci Melly', 'Pak Hasan', 'Mbak Ayu', 'Bu Ratna', 'Koh Willy', 'Nita', 'Bu Endang'],
+    ['Kak Vina', 'Ci Sherly', 'Bu Yanti', 'Mbak Dinda', 'Kak Tasya', 'Ko Hendra', 'Bu Rosa', 'Mbak Lia'],
+    ['Pak Bambang', 'Putri', 'Bu Sinta', 'Ci Lily', 'Pak Rudi', 'Bu Ani', 'Mas Dimas', 'Bu Ningsih'],
+  ];
   const counterAsks = [
     'Kak, harga emas 24K hari ini berapa per gram?',
     'Kalung Italy 17K yang 5 gram masih ready?',
@@ -94,6 +99,7 @@ export async function seedDemo(db: Db, { fresh = false, log = console.log }: { f
     const channel = await createChannel(db, shop.id, agent.name);
     await setChannelStatus(db, channel.id, 'disconnected', `62812000${ai}${ai}${ai}`);
     const messages: InboundMessage[] = [];
+    const customers = customerPools[ai];
     let seq = 0;
 
     for (let day = 6; day >= 0; day--) {

@@ -10,9 +10,10 @@ const on = (key) => prefs().metrics?.[key] !== false;
 const when = (key, html) => (on(key) ? html : '');
 
 export function mountReports({ main, navigate }) {
-  let days = '1';
+  // The demo is refreshed at 04:00, so its "today" is nearly empty; open it on the last 7 days.
+  let days = store.session?.role === 'demo' ? '7' : '1';
   try {
-    days = sessionStorage.getItem('reportDays') ?? '1';
+    days = sessionStorage.getItem('reportDays') ?? days;
   } catch {}
 
   main.innerHTML = `<div class="page">
