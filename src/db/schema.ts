@@ -157,7 +157,15 @@ CREATE TABLE IF NOT EXISTS users (
   role          VARCHAR(20) NOT NULL DEFAULT 'owner',
   created_at    DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY uq_users_username (username)
-)
+);
+
+-- Free trial window (inclusive dates in the shop's time zone, NULL = no limit), a switch to
+-- block an account without deleting it, a free-text note for the dev, and the last login time.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_from DATE NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_until DATE NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at DATETIME(3) NULL
 `;
 
 /** How a shop wants its metrics judged and shown. */
@@ -194,5 +202,9 @@ export const defaultPrefs: ShopPrefs = {
   staleDays: 3,
 };
 
-/** owner: everything in their shop. demo: explore freely, but no WhatsApp linking, sending or settings. */
-export type Role = 'owner' | 'demo';
+/**
+ * owner: everything in their shop. demo: explore freely, but no WhatsApp linking, sending or settings.
+ * dev: the Wamon team; everything an owner can do, plus the Admin screen for every account.
+ */
+export type Role = 'owner' | 'demo' | 'dev';
+export const ROLES: Role[] = ['owner', 'demo', 'dev'];

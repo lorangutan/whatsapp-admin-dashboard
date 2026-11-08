@@ -213,6 +213,7 @@ export function mountInbox({ app, list, main, navigate }) {
       return;
     }
     const strip = $('#ib-today', list);
+    if (!strip) return; // left the chat list before this arrived
     strip.hidden = isEmpty(today);
     strip.classList.toggle('alarm', today.offline.length > 0);
     strip.innerHTML = `${icon(today.offline.length ? 'alert' : 'sun', 16)}<b>${t('Hari ini')}</b><span>${esc(todaySummary(today))}</span>${icon('arrow', 15, 'class="go"')}`;

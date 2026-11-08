@@ -24,7 +24,8 @@ export function mountSettings({ main }) {
         </div>
       </div>
       <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-        <div><h2 style="margin-bottom:4px">${t('Akun')}</h2><div class="muted small">${t('Masuk sebagai {user}', { user: `<b>${esc(store.session?.username ?? '')}</b>` })} · ${t('Keluar dari dashboard di perangkat ini.')}</div></div>
+        <div><h2 style="margin-bottom:4px">${t('Akun')}</h2><div class="muted small">${t('Masuk sebagai {user}', { user: `<b>${esc(store.session?.username ?? '')}</b>` })} · ${t('Keluar dari dashboard di perangkat ini.')}</div>
+          ${store.session?.trialUntil && store.session.role !== 'demo' ? `<div class="small" style="margin-top:4px">${t('Free trial sampai {date}', { date: `<b>${new Date(`${store.session.trialUntil}T00:00:00Z`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</b>` })}</div>` : ''}</div>
         <button class="btn danger" type="button" id="st-logout">${t('Keluar')}</button>
       </div>
       <form class="card owner-only" id="st-form" style="display:grid;gap:12px">

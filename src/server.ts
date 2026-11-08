@@ -8,6 +8,7 @@ import * as repo from './db/repo.js';
 import { ChannelOfflineError, type ChannelManager } from './channels/manager.js';
 import { bus } from './events.js';
 import { registerAuth } from './auth.js';
+import { registerAdmin } from './admin.js';
 import { defaultPrefs, type ShopPrefs, type Stage } from './db/schema.js';
 import { localDayStart } from './sla/businessHours.js';
 import { buildReport, shopClock } from './report/service.js';
@@ -31,6 +32,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
   });
 
   registerAuth(app, db);
+  registerAdmin(app, db);
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof ChannelOfflineError) return reply.code(409).send({ error: err.message });
@@ -49,7 +51,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   /** Owner-only actions: linking numbers, sending WhatsApp messages, shop settings. */
   const ownerOnly = async (req: FastifyRequest, _reply: FastifyReply) => {
-    if (req.session.role !== 'owner') throw demoDenied();
+    if (req.session.role === 'demo') throw demoDenied();
   };
 
   // ---- live updates (only this shop's events)

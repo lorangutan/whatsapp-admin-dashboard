@@ -12,6 +12,7 @@ import { mountPipeline } from './pipeline.js';
 import { mountReports } from './reports.js';
 import { mountNumbers } from './numbers.js';
 import { mountSettings } from './settings.js';
+import { mountAdmin } from './admin.js';
 
 const VIEWS = {
   inbox: { mount: mountInbox, icon: 'chat', label: 'Chat', split: true },
@@ -20,7 +21,11 @@ const VIEWS = {
   reports: { mount: mountReports, icon: 'chart', label: 'Laporan' },
   numbers: { mount: mountNumbers, icon: 'phone', label: 'Nomor WA' },
   settings: { mount: mountSettings, icon: 'sliders', label: 'Pengaturan' },
+  admin: { mount: mountAdmin, icon: 'user', label: 'Admin', devOnly: true },
 };
+/** The Admin screen is for a dev's own login only (not while looking at the app as a client). */
+const isDev = () => store.session?.role === 'dev' && !store.session?.via;
+const allowed = (name) => VIEWS[name] && (!VIEWS[name].devOnly || isDev());
 
 const app = $('#app');
 const list = $('#list-pane');
@@ -34,9 +39,9 @@ function navigate(hash, { remount = false } = {}) {
 }
 
 function route() {
-  const [name = 'inbox', ...params] = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  const def = VIEWS[name] ?? VIEWS.inbox;
-  const viewName = VIEWS[name] ? name : 'inbox';
+  const [name = isDev() ? 'admin' : 'inbox', ...params] = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  const viewName = allowed(name) ? name : 'inbox';
+  const def = VIEWS[viewName];
   if (current.name !== viewName) {
     const first = current.name === null && !current.view;
     const swap = () => {
@@ -79,7 +84,8 @@ function renderRail() {
     <div class="rail-indicator" id="rail-indicator"></div>
     <div class="logo" title="${esc(store.shop.name)}">${icon('chat', 21)}</div>
     ${store.session?.role === 'demo' ? `<div class="demo-badge" title="${t('Akun demo')}">DEMO</div>` : ''}
-    ${Object.entries(VIEWS).map(([k, v]) => `<button class="rail-btn" data-view="${k}" data-tip="${t(v.label)}" aria-label="${t(v.label)}">
+    ${trialBadge()}
+    ${Object.entries(VIEWS).filter(([k]) => allowed(k)).map(([k, v]) => `<button class="rail-btn" data-view="${k}" data-tip="${t(v.label)}" aria-label="${t(v.label)}">
       ${icon(v.icon, 22)}${k === 'followups' ? '<span class="badge danger hidden" id="due-badge"></span>' : ''}
       ${k === 'numbers' ? '<span class="badge warn hidden" id="offline-badge">!</span>' : ''}</button>`).join('')}
     <div class="spacer"></div>
@@ -103,12 +109,46 @@ function renderRail() {
   addEventListener('resize', moveIndicator);
 }
 
+/** A small TRIAL tag under the logo while the account is on a free trial, with the end date on hover. */
+function trialBadge() {
+  const until = store.session?.trialUntil;
+  if (!until || store.session?.role === 'demo') return '';
+  const today = new Date(Date.now() + 420 * 60_000).toISOString().slice(0, 10);
+  const left = Math.round((Date.parse(`${until}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) + 1;
+  const date = new Date(`${until}T00:00:00Z`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+  const tip = t('Free trial sampai {date} (sisa {n} hari)', { date, n: Math.max(left, 0) });
+  return `<div class="demo-badge trial-badge" title="${esc(tip)}">TRIAL</div>`;
+}
+
+/** Blue bar while a dev is looking at the app as a client, with the way back to Admin. */
+function renderViewAsBar() {
+  const via = store.session?.via;
+  if (!via) return;
+  const bar = document.createElement('div');
+  bar.className = 'down-bar viewas-bar';
+  bar.setAttribute('role', 'status');
+  bar.innerHTML = `${icon('eye', 17)}
+    <span>${t('Kamu melihat sebagai {user} di {shop}. Semua aksi tercatat atas akun ini.', {
+      user: `<b>${esc(store.session.username)}</b>`,
+      shop: `<b>${esc(store.shop.name)}</b>`,
+    })}</span>
+    <button class="btn small" type="button">${t('Kembali ke Admin')}</button>`;
+  bar.querySelector('button').onclick = async () => {
+    await api('/api/admin/return', { method: 'POST' }).catch(() => {});
+    location.hash = '#/admin';
+    location.reload();
+  };
+  document.body.append(bar);
+  document.body.classList.add('has-down');
+}
+
 /**
  * Red bar while a linked number is down (offline 5+ minutes, or logged out): new chats from it
  * are not reaching Wamon. Closing it hides it until a different set of numbers is down.
  */
 let dismissedDown = '';
 function renderDownBar() {
+  if (store.session?.via) return; // the "viewing as" bar has the top strip
   const down = store.channels.filter((c) => c.down);
   const key = down.map((c) => c.id).join(',');
   let bar = $('#down-bar');
@@ -231,6 +271,7 @@ async function start() {
     store.session = session;
     // Owner-only controls (linking numbers, settings, sending) are hidden for the demo account.
     document.body.classList.toggle('role-demo', session.role === 'demo');
+    document.body.classList.toggle('role-dev', isDev()); // one more tab in the phone bar
     // A session that expires mid-use sends the user back to the login screen.
     addEventListener('auth-required', () => location.reload(), { once: true });
     addEventListener('wamon-logout', logout);
@@ -241,6 +282,7 @@ async function start() {
   }
   document.title = `${store.shop.name} · Wamon`;
   renderRail();
+  renderViewAsBar();
   addEventListener('hashchange', route);
   addEventListener('keydown', onKey);
   route();

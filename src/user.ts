@@ -1,9 +1,9 @@
 // Create or reset a dashboard login.
-//   npm run user -- <username> <password> [--shop "Shop name"] [--role owner|demo]
+//   npm run user -- <username> <password> [--shop "Shop name"] [--role owner|demo|dev]
 // The shop is created if it doesn't exist yet; without --shop the account joins the first shop.
 import { openDb } from './db/index.js';
 import { ensureShop, getShop, upsertUser } from './db/repo.js';
-import { defaultBusinessHours, defaultQuickReplies, defaultStages, type Role } from './db/schema.js';
+import { defaultBusinessHours, defaultQuickReplies, defaultStages, ROLES, type Role } from './db/schema.js';
 import { hashPassword } from './auth.js';
 
 const args = process.argv.slice(2);
@@ -15,8 +15,8 @@ const shopName = flag('shop');
 const role = (flag('role') ?? 'owner') as Role;
 const [username, password] = args;
 
-if (!username || !password || !['owner', 'demo'].includes(role)) {
-  console.error('Usage: npm run user -- <username> <password> [--shop "Shop name"] [--role owner|demo]');
+if (!username || !password || !ROLES.includes(role)) {
+  console.error('Usage: npm run user -- <username> <password> [--shop "Shop name"] [--role owner|demo|dev]');
   process.exit(1);
 }
 if (password.length < 4) {

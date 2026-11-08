@@ -2,8 +2,9 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config.js';
 import type { Db } from './db/index.js';
-import { findUser, getShop } from './db/repo.js';
-import type { Role } from './db/schema.js';
+import { findUser, getShop, touchLogin, type User } from './db/repo.js';
+import { ROLES, type Role } from './db/schema.js';
+import { accessProblem } from './trial.js';
 
 const COOKIE = 'wamon_session';
 const MAX_AGE_S = 30 * 24 * 3600;
@@ -12,6 +13,8 @@ export interface Session {
   username: string;
   shopId: number;
   role: Role;
+  /** Set when a dev is looking at the app as this account: the dev's username, to switch back. */
+  via?: string;
 }
 
 declare module 'fastify' {
@@ -60,7 +63,8 @@ function readToken(token: string | undefined): Session | null {
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
     if (!(data.exp > Date.now()) || typeof data.shopId !== 'number') return null;
-    return { username: data.username, shopId: data.shopId, role: data.role === 'demo' ? 'demo' : 'owner' };
+    const role: Role = ROLES.includes(data.role) ? data.role : 'owner';
+    return { username: data.username, shopId: data.shopId, role, ...(typeof data.via === 'string' ? { via: data.via } : {}) };
   } catch {
     return null;
   }
@@ -96,6 +100,9 @@ function tooManyAttempts(ip: string) {
   return a.n > 10;
 }
 
+/** Login refused for a reason the user should see: a blocked account, or a trial outside its dates. */
+class Refused extends Error {}
+
 /** Owner login from the environment first, then accounts stored in the database. */
 async function authenticate(db: Db, username: string, password: string): Promise<Session | null> {
   if (config.adminPassword && username === config.adminUsername && sameSecret(password, config.adminPassword)) {
@@ -103,11 +110,48 @@ async function authenticate(db: Db, username: string, password: string): Promise
   }
   const user = await findUser(db, username);
   if (user && verifyPassword(password, user.passwordHash)) {
+    // Only after the password matches, so these messages never reveal that an account exists.
+    const problem = user.role === 'dev' ? null : accessProblem(user);
+    if (problem) throw new Refused(problem);
+    await touchLogin(db, user.id).catch(() => {});
     return { username: user.username, shopId: user.shopId, role: user.role };
   }
   // Burn similar time for unknown users so response time doesn't reveal which usernames exist.
   if (!user) verifyPassword(password, `scrypt$${'x'.repeat(22)}$${'x'.repeat(43)}`);
   return null;
+}
+
+// Each API request re-checks the account (deleted, blocked, trial over, moved to another shop or
+// role) so changes made in Admin apply within seconds, not when the 30-day cookie runs out.
+const userCache = new Map<string, { user: User | undefined; at: number }>();
+const CACHE_MS = 15_000;
+async function currentUser(db: Db, username: string) {
+  const hit = userCache.get(username);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.user;
+  const user = await findUser(db, username);
+  userCache.set(username, { user, at: Date.now() });
+  return user;
+}
+/** Admin calls this after changing accounts so the change applies on their next request. */
+export const forgetUsers = () => userCache.clear();
+
+/** The stored account behind a cookie, checked again; null means the cookie is no longer good. */
+async function recheck(db: Db, s: Session): Promise<Session | null> {
+  if (config.adminPassword && s.username === config.adminUsername && !s.via) return s; // the env owner login
+  const user = await currentUser(db, s.username);
+  if (!user) return null;
+  if (s.via) {
+    // A dev looking at the app as this account: the dev must still be an active dev.
+    const dev = await currentUser(db, s.via);
+    return dev?.role === 'dev' && !dev.disabled ? { ...s, shopId: user.shopId } : null;
+  }
+  if (user.role !== 'dev' && accessProblem(user)) return null;
+  return { ...s, shopId: user.shopId, role: user.role };
+}
+
+/** Logs this browser in as `session` (Admin uses it to look at the app as another account). */
+export function issueSession(req: FastifyRequest, reply: FastifyReply, session: Session) {
+  setCookie(req, reply, makeToken(session), MAX_AGE_S);
 }
 
 export function registerAuth(app: FastifyInstance, db: Db) {
@@ -120,18 +164,32 @@ export function registerAuth(app: FastifyInstance, db: Db) {
   app.get('/api/session', async (req) => {
     const s = authEnabled() ? readToken(readCookie(req, COOKIE)) : await devLogin();
     if (!s) return { required: true, loggedIn: false };
-    const shop = await getShop(db, s.shopId);
-    return { required: authEnabled(), loggedIn: true, username: s.username, role: s.role, shopName: shop.name };
+    const live = authEnabled() ? await recheck(db, s) : s;
+    if (!live) return { required: true, loggedIn: false };
+    const shop = await getShop(db, live.shopId);
+    const user = authEnabled() ? await currentUser(db, live.username) : undefined;
+    return {
+      required: authEnabled(),
+      loggedIn: true,
+      username: live.username,
+      role: live.role,
+      shopName: shop.name,
+      via: live.via ?? null,
+      trialFrom: user?.trialFrom ?? null,
+      trialUntil: user?.trialUntil ?? null,
+    };
   });
 
   app.post<{ Body: { username?: string; password?: string } }>('/api/login', async (req, reply) => {
     if (!authEnabled()) return { ok: true };
     if (tooManyAttempts(req.ip)) return reply.code(429).send({ error: 'Terlalu banyak percobaan. Coba lagi 15 menit.' });
-    const session = await authenticate(
-      db,
-      String(req.body?.username ?? '').trim().toLowerCase(),
-      String(req.body?.password ?? ''),
-    );
+    let session: Session | null;
+    try {
+      session = await authenticate(db, String(req.body?.username ?? '').trim().toLowerCase(), String(req.body?.password ?? ''));
+    } catch (err) {
+      if (err instanceof Refused) return reply.code(403).send({ error: err.message });
+      throw err;
+    }
     if (!session) return reply.code(401).send({ error: 'Username atau password salah' });
     attempts.delete(req.ip);
     setCookie(req, reply, makeToken(session), MAX_AGE_S);
@@ -143,14 +201,24 @@ export function registerAuth(app: FastifyInstance, db: Db) {
     return { ok: true };
   });
 
+  // Back from "look as this account" to the dev's own login.
+  app.post('/api/admin/return', async (req, reply) => {
+    const s = readToken(readCookie(req, COOKIE));
+    const dev = s?.via ? await findUser(db, s.via) : undefined;
+    if (!dev || dev.role !== 'dev' || dev.disabled) return reply.code(403).send({ error: 'forbidden' });
+    issueSession(req, reply, { username: dev.username, shopId: dev.shopId, role: 'dev' });
+    return { ok: true };
+  });
+
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api')) return;
-    if (req.url.startsWith('/api/login') || req.url.startsWith('/api/session')) return;
+    if (req.url.startsWith('/api/login') || req.url.startsWith('/api/session') || req.url.startsWith('/api/admin/return')) return;
     if (!authEnabled()) {
       req.session = await devLogin();
       return;
     }
-    const s = readToken(readCookie(req, COOKIE));
+    const token = readToken(readCookie(req, COOKIE));
+    const s = token && (await recheck(db, token));
     if (!s) return reply.code(401).send({ error: 'unauthorized' });
     req.session = s;
   });

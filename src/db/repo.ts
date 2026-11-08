@@ -118,14 +118,97 @@ export interface User {
   username: string;
   passwordHash: string;
   role: Role;
+  /** YYYY-MM-DD, inclusive, in the shop's time zone; null means no limit. */
+  trialFrom: string | null;
+  trialUntil: string | null;
+  disabled: boolean;
+  note: string | null;
+  lastLoginAt: Date | null;
+  /** The shop's UTC offset, to judge the trial dates by the shop's own calendar. */
+  utcOffsetMinutes: number;
 }
 
+const userCols = `u.id, u.shop_id AS shopId, u.username, u.password_hash AS passwordHash, u.role,
+  DATE_FORMAT(u.trial_from, '%Y-%m-%d') AS trialFrom, DATE_FORMAT(u.trial_until, '%Y-%m-%d') AS trialUntil,
+  u.disabled, u.note, u.last_login_at AS lastLoginAt, COALESCE(s.utc_offset_minutes, 420) AS utcOffsetMinutes`;
+const userFrom = 'users u LEFT JOIN shops s ON s.id = u.shop_id';
+
 export async function findUser(db: Db, username: string): Promise<User | undefined> {
-  const [u] = await db.query<User>(
-    'SELECT id, shop_id AS shopId, username, password_hash AS passwordHash, role FROM users WHERE username = ?',
-    [username],
+  const [u] = await db.query<User>(`SELECT ${userCols} FROM ${userFrom} WHERE u.username = ?`, [username]);
+  return u && { ...u, disabled: Boolean(u.disabled) };
+}
+
+export async function findUserById(db: Db, id: number): Promise<User | undefined> {
+  const [u] = await db.query<User>(`SELECT ${userCols} FROM ${userFrom} WHERE u.id = ?`, [id]);
+  return u && { ...u, disabled: Boolean(u.disabled) };
+}
+
+/** Every account with its shop and how much that shop is actually using Wamon, for the Admin screen. */
+export async function listUsersForAdmin(db: Db) {
+  const rows = await db.query<Record<string, any>>(
+    `SELECT ${userCols}, s.name AS shopName, u.created_at AS createdAt,
+            (SELECT COUNT(*) FROM channels ch WHERE ch.shop_id = u.shop_id) AS numbers,
+            (SELECT COUNT(*) FROM channels ch WHERE ch.shop_id = u.shop_id AND ch.status = 'connected') AS connected,
+            (SELECT MAX(c.last_message_at) FROM chats c JOIN channels ch ON ch.id = c.channel_id WHERE ch.shop_id = u.shop_id) AS lastMessageAt
+       FROM ${userFrom}
+      ORDER BY u.role = 'dev' DESC, u.created_at DESC`,
   );
-  return u;
+  return rows.map(({ passwordHash: _omit, ...r }) => ({
+    ...r,
+    disabled: Boolean(r.disabled),
+    numbers: Number(r.numbers),
+    connected: Number(r.connected),
+  }));
+}
+
+export async function listShopsForAdmin(db: Db) {
+  return db.query<{ id: number; name: string }>('SELECT id, name FROM shops ORDER BY name');
+}
+
+export interface UserPatch {
+  username?: string;
+  passwordHash?: string;
+  role?: Role;
+  shopId?: number;
+  trialFrom?: string | null;
+  trialUntil?: string | null;
+  disabled?: boolean;
+  note?: string | null;
+}
+
+export async function updateUser(db: Db, id: number, patch: UserPatch) {
+  const columns: Record<string, unknown> = {
+    username: patch.username,
+    password_hash: patch.passwordHash,
+    role: patch.role,
+    shop_id: patch.shopId,
+    trial_from: patch.trialFrom,
+    trial_until: patch.trialUntil,
+    disabled: patch.disabled,
+    note: patch.note,
+  };
+  const set = Object.entries(columns).filter(([, v]) => v !== undefined);
+  if (!set.length) return;
+  await db.run(`UPDATE users SET ${set.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`, [...set.map(([, v]) => v), id]);
+}
+
+export async function createUser(
+  db: Db,
+  u: { username: string; passwordHash: string; role: Role; shopId: number; trialFrom: string | null; trialUntil: string | null; note: string | null },
+) {
+  const { insertId } = await db.run(
+    'INSERT INTO users (shop_id, username, password_hash, role, trial_from, trial_until, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [u.shopId, u.username, u.passwordHash, u.role, u.trialFrom, u.trialUntil, u.note],
+  );
+  return insertId;
+}
+
+export async function deleteUser(db: Db, id: number) {
+  await db.run('DELETE FROM users WHERE id = ?', [id]);
+}
+
+export async function touchLogin(db: Db, id: number) {
+  await db.run('UPDATE users SET last_login_at = UTC_TIMESTAMP(3) WHERE id = ?', [id]);
 }
 
 /** Creates the account, or resets its password, shop and role if the username exists. */
