@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config.js';
 import type { Db } from './db/index.js';
-import { findUser, getShop, touchLogin, type User } from './db/repo.js';
+import { createUser, findShopOwner, findUser, getShop, touchLogin, updateUser, type User } from './db/repo.js';
 import { ROLES, type Role } from './db/schema.js';
 import { accessProblem } from './trial.js';
 
@@ -103,15 +103,27 @@ function tooManyAttempts(ip: string) {
 /** Login refused for a reason the user should see: a blocked account, or a trial outside its dates. */
 class Refused extends Error {}
 
-/** Owner login from the environment first, then accounts stored in the database. */
+/** Why this stored account may not log in now. A sales login follows its shop owner's trial and block. */
+async function problemOf(db: Db, user: User) {
+  if (user.role === 'dev') return null;
+  const own = accessProblem(user);
+  if (own || user.role !== 'sales') return own;
+  const owner = await findShopOwner(db, user.shopId);
+  return owner ? accessProblem(owner) : null;
+}
+
+/**
+ * Accounts stored in the database first, then the owner login from the environment. Once the env
+ * owner changes their password in Pengaturan they get a stored account, which replaces the env one.
+ */
 async function authenticate(db: Db, username: string, password: string): Promise<Session | null> {
-  if (config.adminPassword && username === config.adminUsername && sameSecret(password, config.adminPassword)) {
+  const user = await findUser(db, username);
+  if (!user && config.adminPassword && username === config.adminUsername && sameSecret(password, config.adminPassword)) {
     return { username, shopId: (await getShop(db)).id, role: 'owner' };
   }
-  const user = await findUser(db, username);
   if (user && verifyPassword(password, user.passwordHash)) {
     // Only after the password matches, so these messages never reveal that an account exists.
-    const problem = user.role === 'dev' ? null : accessProblem(user);
+    const problem = await problemOf(db, user);
     if (problem) throw new Refused(problem);
     await touchLogin(db, user.id).catch(() => {});
     return { username: user.username, shopId: user.shopId, role: user.role };
@@ -132,20 +144,43 @@ async function currentUser(db: Db, username: string) {
   userCache.set(username, { user, at: Date.now() });
   return user;
 }
+const ownerCache = new Map<number, { user: User | undefined; at: number }>();
+async function currentOwner(db: Db, shopId: number) {
+  const hit = ownerCache.get(shopId);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.user;
+  const user = await findShopOwner(db, shopId);
+  ownerCache.set(shopId, { user, at: Date.now() });
+  return user;
+}
 /** Admin calls this after changing accounts so the change applies on their next request. */
-export const forgetUsers = () => userCache.clear();
+export const forgetUsers = () => {
+  userCache.clear();
+  ownerCache.clear();
+};
+
+/** Passwords people pick in the app: long enough to resist guessing, short enough to type on a phone. */
+export function passwordProblem(p: unknown) {
+  if (typeof p !== 'string' || p.length < 8) return 'Password minimal 8 karakter';
+  if (p.length > 200) return 'Password terlalu panjang';
+  return null;
+}
 
 /** The stored account behind a cookie, checked again; null means the cookie is no longer good. */
 async function recheck(db: Db, s: Session): Promise<Session | null> {
-  if (config.adminPassword && s.username === config.adminUsername && !s.via) return s; // the env owner login
   const user = await currentUser(db, s.username);
+  // The env owner login, until it changes its password and becomes a stored account.
+  if (!user && config.adminPassword && s.username === config.adminUsername && !s.via) return s;
   if (!user) return null;
   if (s.via) {
     // A dev looking at the app as this account: the dev must still be an active dev.
     const dev = await currentUser(db, s.via);
     return dev?.role === 'dev' && !dev.disabled ? { ...s, shopId: user.shopId } : null;
   }
-  if (user.role !== 'dev' && accessProblem(user)) return null;
+  if (user.role === 'sales') {
+    if (accessProblem(user)) return null;
+    const owner = await currentOwner(db, user.shopId);
+    if (owner && accessProblem(owner)) return null;
+  } else if (user.role !== 'dev' && accessProblem(user)) return null;
   return { ...s, shopId: user.shopId, role: user.role };
 }
 
@@ -193,6 +228,41 @@ export function registerAuth(app: FastifyInstance, db: Db) {
     if (!session) return reply.code(401).send({ error: 'Username atau password salah' });
     attempts.delete(req.ip);
     setCookie(req, reply, makeToken(session), MAX_AGE_S);
+    return { ok: true };
+  });
+
+  // Anyone logged in changes their own password. The env owner gets a stored account here, which
+  // replaces the env password from then on.
+  app.post<{ Body: { current?: string; next?: string } }>('/api/account/password', async (req, reply) => {
+    const s = req.session;
+    if (!authEnabled()) return reply.code(400).send({ error: 'Login tidak aktif di server ini' });
+    if (s.role === 'demo') return reply.code(403).send({ error: 'Akun demo tidak bisa melakukan ini' });
+    if (s.via) return reply.code(403).send({ error: 'Kembali ke akun sendiri untuk mengganti password' });
+    if (tooManyAttempts(req.ip)) return reply.code(429).send({ error: 'Terlalu banyak percobaan. Coba lagi 15 menit.' });
+    const current = String(req.body?.current ?? '');
+    const next = req.body?.next;
+    const problem = passwordProblem(next);
+    if (problem) return reply.code(400).send({ error: problem });
+    const user = await findUser(db, s.username);
+    if (user) {
+      if (!verifyPassword(current, user.passwordHash)) return reply.code(400).send({ error: 'Password lama salah' });
+      await updateUser(db, user.id, { passwordHash: hashPassword(next as string) });
+    } else if (config.adminPassword && s.username === config.adminUsername) {
+      if (!sameSecret(current, config.adminPassword)) return reply.code(400).send({ error: 'Password lama salah' });
+      await createUser(db, {
+        username: s.username,
+        passwordHash: hashPassword(next as string),
+        role: 'owner',
+        shopId: s.shopId,
+        trialFrom: null,
+        trialUntil: null,
+        note: 'Owner dari env, password diganti sendiri',
+      });
+    } else {
+      return reply.code(404).send({ error: 'Akun tidak ditemukan' });
+    }
+    attempts.delete(req.ip);
+    forgetUsers();
     return { ok: true };
   });
 

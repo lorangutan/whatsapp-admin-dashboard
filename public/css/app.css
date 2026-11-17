@@ -756,6 +756,12 @@ button.pill.resolve-btn { padding: 5px 11px; font-size: 12.5px; }
 
 /* demo account: explore everything, but owner-only controls are hidden (the server refuses them too) */
 .role-demo .owner-only { display: none !important; }
+/* sales logins: no shop settings, numbers or sending to the owner (the server refuses them too) */
+.role-sales .owner-only, .role-sales .settings-card { display: none !important; }
+.team-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+.team-row .who { min-width: 0; }
+.team-row .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pw-form { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
 .demo-badge {
   font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; color: #fff; background: var(--warn);
   padding: 2px 6px; border-radius: 6px; margin: -8px 0 10px;

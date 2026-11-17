@@ -3,6 +3,7 @@ import { api, $, $$, esc, icon, toast, THEMES, getThemePref, setThemePref } from
 import { store } from './store.js';
 import { mountStageEditor, mountMetricSettings, mountAlertSettings } from './shop-settings.js';
 import { t, getLang, setLang, LANGS } from './i18n.js';
+import { accountCards, mountAccount } from './account.js';
 
 const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
@@ -28,6 +29,7 @@ export function mountSettings({ main }) {
           ${store.session?.trialUntil && store.session.role !== 'demo' ? `<div class="small" style="margin-top:4px">${t('Free trial sampai {date}', { date: `<b>${new Date(`${store.session.trialUntil}T00:00:00Z`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</b>` })}</div>` : ''}</div>
         <button class="btn danger" type="button" id="st-logout">${t('Keluar')}</button>
       </div>
+      ${accountCards()}
       <form class="card owner-only" id="st-form" style="display:grid;gap:12px">
         <h2>${t('Usaha & SLA')}</h2>
         <div class="row2">
@@ -91,9 +93,13 @@ export function mountSettings({ main }) {
   markTheme();
   for (const b of $$('[data-lang]', main)) b.onclick = () => setLang(b.dataset.lang);
   $('#st-logout', main).onclick = () => window.dispatchEvent(new Event('wamon-logout'));
-  mountAlertSettings($('#st-alerts', main));
-  mountMetricSettings($('#st-metrics', main));
-  mountStageEditor($('#st-stages', main));
+  mountAccount(main);
+  // Sales logins don't see the shop's reminders, metrics or stages settings.
+  if (store.session?.role !== 'sales') {
+    mountAlertSettings($('#st-alerts', main));
+    mountMetricSettings($('#st-metrics', main));
+    mountStageEditor($('#st-stages', main));
+  }
 
   const form = $('#st-form', main);
   form.onsubmit = async (e) => {

@@ -143,6 +143,25 @@ export async function findUserById(db: Db, id: number): Promise<User | undefined
   return u && { ...u, disabled: Boolean(u.disabled) };
 }
 
+/** The shop's first stored owner account; a sales login's trial and blocking follow it. */
+export async function findShopOwner(db: Db, shopId: number): Promise<User | undefined> {
+  const [u] = await db.query<User>(
+    `SELECT ${userCols} FROM ${userFrom} WHERE u.shop_id = ? AND u.role = 'owner' ORDER BY u.id LIMIT 1`,
+    [shopId],
+  );
+  return u && { ...u, disabled: Boolean(u.disabled) };
+}
+
+/** The shop's staff (sales) logins, for the owner's Tim card. */
+export async function listTeam(db: Db, shopId: number) {
+  const rows = await db.query<{ id: number; username: string; disabled: unknown; lastLoginAt: Date | null; createdAt: Date }>(
+    `SELECT id, username, disabled, last_login_at AS lastLoginAt, created_at AS createdAt
+       FROM users WHERE shop_id = ? AND role = 'sales' ORDER BY created_at`,
+    [shopId],
+  );
+  return rows.map((r) => ({ ...r, disabled: Boolean(r.disabled) }));
+}
+
 /** Every account with its shop and how much that shop is actually using Wamon, for the Admin screen. */
 export async function listUsersForAdmin(db: Db) {
   const rows = await db.query<Record<string, any>>(

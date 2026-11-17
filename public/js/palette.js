@@ -1,6 +1,6 @@
 // Ctrl/Cmd+K command palette: jump to views, run actions, search chats.
 import { api, $, $$, esc, icon, avatar, listTime, chatName, debounce, displayPhone, THEMES, setThemePref } from './lib.js';
-import { stageName } from './store.js';
+import { stageName, store } from './store.js';
 import { t, getLang, setLang, LANGS } from './i18n.js';
 
 let backdrop = null;
@@ -19,8 +19,12 @@ export function openPalette(navigate) {
     { label: t('Chat belum dibalas'), icon: 'clock', run: () => setInbox('unreplied'), kw: 'unreplied waiting menunggu' },
     { label: t('Pipeline'), icon: 'board', run: () => navigate('#/pipeline'), kw: 'kanban deal lead' },
     { label: t('Follow-up'), icon: 'clock', run: () => navigate('#/followups'), kw: 'reminder pengingat tugas' },
-    { label: t('Laporan'), icon: 'chart', run: () => navigate('#/reports'), kw: 'sla report statistik' },
-    { label: t('Nomor WhatsApp'), icon: 'phone', run: () => navigate('#/numbers'), kw: 'qr hubungkan sales' },
+    ...(store.session?.role === 'sales'
+      ? []
+      : [
+          { label: t('Laporan'), icon: 'chart', run: () => navigate('#/reports'), kw: 'sla report statistik' },
+          { label: t('Nomor WhatsApp'), icon: 'phone', run: () => navigate('#/numbers'), kw: 'qr hubungkan sales' },
+        ]),
     { label: t('Pengaturan'), icon: 'sliders', run: () => navigate('#/settings'), kw: 'jam buka balasan cepat' },
     { label: t('Keluar'), icon: 'back', run: () => window.dispatchEvent(new Event('wamon-logout')), kw: 'logout sign out' },
     ...THEMES.map((th) => ({

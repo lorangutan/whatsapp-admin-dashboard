@@ -205,6 +205,8 @@ export const defaultPrefs: ShopPrefs = {
 /**
  * owner: everything in their shop. demo: explore freely, but no WhatsApp linking, sending or settings.
  * dev: the Wamon team; everything an owner can do, plus the Admin screen for every account.
+ * sales: a staff login the owner makes: chats, replies, leads, follow-ups and pipeline, but no
+ * reports, numbers or shop settings. Its access follows the shop owner's (trial, blocked).
  */
-export type Role = 'owner' | 'demo' | 'dev';
-export const ROLES: Role[] = ['owner', 'demo', 'dev'];
+export type Role = 'owner' | 'demo' | 'dev' | 'sales';
+export const ROLES: Role[] = ['owner', 'demo', 'dev', 'sales'];

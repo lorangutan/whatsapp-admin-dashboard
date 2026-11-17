@@ -9,6 +9,7 @@ import { ChannelOfflineError, type ChannelManager } from './channels/manager.js'
 import { bus } from './events.js';
 import { registerAuth } from './auth.js';
 import { registerAdmin } from './admin.js';
+import { registerTeam } from './team.js';
 import { defaultPrefs, type ShopPrefs, type Stage } from './db/schema.js';
 import { localDayStart } from './sla/businessHours.js';
 import { buildReport, shopClock } from './report/service.js';
@@ -23,6 +24,8 @@ type IdParams = { Params: { id: string } };
 const notFound = () => Object.assign(new Error('tidak ditemukan'), { statusCode: 404 });
 const demoDenied = () =>
   Object.assign(new Error('Akun demo tidak bisa melakukan ini'), { statusCode: 403 });
+const salesDenied = () =>
+  Object.assign(new Error('Hanya owner yang bisa melakukan ini'), { statusCode: 403 });
 
 export function buildServer(db: Db, channels: ChannelManager, loggerInstance: FastifyBaseLogger) {
   const app = Fastify({ loggerInstance, disableRequestLogging: true, trustProxy: config.trustProxy });
@@ -33,6 +36,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   registerAuth(app, db);
   registerAdmin(app, db);
+  registerTeam(app, db);
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof ChannelOfflineError) return reply.code(409).send({ error: err.message });
@@ -49,9 +53,18 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
     return id;
   }
 
-  /** Owner-only actions: linking numbers, sending WhatsApp messages, shop settings. */
+  /** Owner-only actions: linking numbers, shop settings, WhatsApp messages to the owner. */
   const ownerOnly = async (req: FastifyRequest, _reply: FastifyReply) => {
     if (req.session.role === 'demo') throw demoDenied();
+    if (req.session.role === 'sales') throw salesDenied();
+  };
+  /** Replying to customers: everyone but the demo account. */
+  const notDemo = async (req: FastifyRequest, _reply: FastifyReply) => {
+    if (req.session.role === 'demo') throw demoDenied();
+  };
+  /** Reports and the owner's WhatsApp previews: hidden from sales logins (the demo may look). */
+  const noSales = async (req: FastifyRequest, _reply: FastifyReply) => {
+    if (req.session.role === 'sales') throw salesDenied();
   };
 
   // ---- live updates (only this shop's events)
@@ -133,7 +146,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   // ---- reports
   // ?days=1 is "today" in shop time, ?days=7 is the last 7 local days including today.
-  app.get<{ Querystring: { days?: string } }>('/api/report', async (req) => {
+  app.get<{ Querystring: { days?: string } }>('/api/report', { preHandler: noSales }, async (req) => {
     const s = await shopOf(req);
     const days = Math.max(1, Number(req.query.days ?? 1));
     const now = new Date();
@@ -141,7 +154,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
     return buildReport(db, s, { from: new Date(todayStart.getTime() - (days - 1) * DAY), to: now }, now);
   });
 
-  app.get('/api/report/daily-preview', async (req) => {
+  app.get('/api/report/daily-preview', { preHandler: noSales }, async (req) => {
     const s = await shopOf(req);
     const now = new Date();
     const from = localDayStart(now, shopClock(s));
@@ -151,7 +164,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
   // ---- today's to-do list ("Hari ini"): the inbox card and the morning WhatsApp message
   app.get('/api/today', async (req) => buildToday(db, await shopOf(req), channels));
 
-  app.get('/api/today/preview', async (req) => {
+  app.get('/api/today/preview', { preHandler: noSales }, async (req) => {
     const s = await shopOf(req);
     return { text: formatToday(s, await buildToday(db, s, channels), { title: `Hari ini — ${s.name}` }) };
   });
@@ -246,7 +259,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
     ),
   );
 
-  app.post<IdParams & { Body: { text: string } }>('/api/chats/:id/messages', { preHandler: ownerOnly }, async (req, reply) => {
+  app.post<IdParams & { Body: { text: string } }>('/api/chats/:id/messages', { preHandler: notDemo }, async (req, reply) => {
     const text = req.body?.text?.trim();
     if (!text) return reply.code(400).send({ error: 'pesan kosong' });
     const target = await repo.chatTarget(db, await own(req, 'chat', Number(req.params.id)));

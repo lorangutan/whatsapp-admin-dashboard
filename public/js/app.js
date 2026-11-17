@@ -18,14 +18,16 @@ const VIEWS = {
   inbox: { mount: mountInbox, icon: 'chat', label: 'Chat', split: true },
   pipeline: { mount: mountPipeline, icon: 'board', label: 'Pipeline' },
   followups: { mount: mountFollowups, icon: 'clock', label: 'Follow-up', split: true },
-  reports: { mount: mountReports, icon: 'chart', label: 'Laporan' },
-  numbers: { mount: mountNumbers, icon: 'phone', label: 'Nomor WA' },
+  reports: { mount: mountReports, icon: 'chart', label: 'Laporan', noSales: true },
+  numbers: { mount: mountNumbers, icon: 'phone', label: 'Nomor WA', noSales: true },
   settings: { mount: mountSettings, icon: 'sliders', label: 'Pengaturan' },
   admin: { mount: mountAdmin, icon: 'user', label: 'Admin', devOnly: true },
 };
 /** The Admin screen is for a dev's own login only (not while looking at the app as a client). */
 const isDev = () => store.session?.role === 'dev' && !store.session?.via;
-const allowed = (name) => VIEWS[name] && (!VIEWS[name].devOnly || isDev());
+/** Sales logins work chats and leads; reports and linking numbers are the owner's. */
+const allowed = (name) =>
+  VIEWS[name] && (!VIEWS[name].devOnly || isDev()) && !(VIEWS[name].noSales && store.session?.role === 'sales');
 
 const app = $('#app');
 const list = $('#list-pane');
@@ -271,6 +273,7 @@ async function start() {
     store.session = session;
     // Owner-only controls (linking numbers, settings, sending) are hidden for the demo account.
     document.body.classList.toggle('role-demo', session.role === 'demo');
+    document.body.classList.toggle('role-sales', session.role === 'sales');
     document.body.classList.toggle('role-dev', isDev()); // one more tab in the phone bar
     // A session that expires mid-use sends the user back to the login screen.
     addEventListener('auth-required', () => location.reload(), { once: true });
