@@ -165,7 +165,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_from DATE NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_until DATE NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at DATETIME(3) NULL
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at DATETIME(3) NULL;
+
+-- A sales login sees only the chats of this WhatsApp number (NULL: none until the owner picks one).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_id INT NULL
 `;
 
 /** How a shop wants its metrics judged and shown. */

@@ -760,6 +760,7 @@ button.pill.resolve-btn { padding: 5px 11px; font-size: 12.5px; }
 .role-sales .owner-only, .role-sales .settings-card { display: none !important; }
 .team-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
 .team-row .who { min-width: 0; }
+.team-row .team-number { margin-top: 6px; max-width: 300px; padding: 6px 10px; font-size: 13px; }
 .team-row .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pw-form { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; }
 .demo-badge {

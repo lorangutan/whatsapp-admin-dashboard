@@ -126,11 +126,14 @@ export interface User {
   lastLoginAt: Date | null;
   /** The shop's UTC offset, to judge the trial dates by the shop's own calendar. */
   utcOffsetMinutes: number;
+  /** Sales logins: the one WhatsApp number whose chats they see (null: none yet). */
+  channelId: number | null;
 }
 
 const userCols = `u.id, u.shop_id AS shopId, u.username, u.password_hash AS passwordHash, u.role,
   DATE_FORMAT(u.trial_from, '%Y-%m-%d') AS trialFrom, DATE_FORMAT(u.trial_until, '%Y-%m-%d') AS trialUntil,
-  u.disabled, u.note, u.last_login_at AS lastLoginAt, COALESCE(s.utc_offset_minutes, 420) AS utcOffsetMinutes`;
+  u.disabled, u.note, u.last_login_at AS lastLoginAt, COALESCE(s.utc_offset_minutes, 420) AS utcOffsetMinutes,
+  u.channel_id AS channelId`;
 const userFrom = 'users u LEFT JOIN shops s ON s.id = u.shop_id';
 
 export async function findUser(db: Db, username: string): Promise<User | undefined> {
@@ -154,8 +157,8 @@ export async function findShopOwner(db: Db, shopId: number): Promise<User | unde
 
 /** The shop's staff (sales) logins, for the owner's Tim card. */
 export async function listTeam(db: Db, shopId: number) {
-  const rows = await db.query<{ id: number; username: string; disabled: unknown; lastLoginAt: Date | null; createdAt: Date }>(
-    `SELECT id, username, disabled, last_login_at AS lastLoginAt, created_at AS createdAt
+  const rows = await db.query<{ id: number; username: string; disabled: unknown; lastLoginAt: Date | null; createdAt: Date; channelId: number | null }>(
+    `SELECT id, username, disabled, last_login_at AS lastLoginAt, created_at AS createdAt, channel_id AS channelId
        FROM users WHERE shop_id = ? AND role = 'sales' ORDER BY created_at`,
     [shopId],
   );
@@ -193,6 +196,7 @@ export interface UserPatch {
   trialUntil?: string | null;
   disabled?: boolean;
   note?: string | null;
+  channelId?: number | null;
 }
 
 export async function updateUser(db: Db, id: number, patch: UserPatch) {
@@ -205,6 +209,7 @@ export async function updateUser(db: Db, id: number, patch: UserPatch) {
     trial_until: patch.trialUntil,
     disabled: patch.disabled,
     note: patch.note,
+    channel_id: patch.channelId,
   };
   const set = Object.entries(columns).filter(([, v]) => v !== undefined);
   if (!set.length) return;
@@ -213,11 +218,14 @@ export async function updateUser(db: Db, id: number, patch: UserPatch) {
 
 export async function createUser(
   db: Db,
-  u: { username: string; passwordHash: string; role: Role; shopId: number; trialFrom: string | null; trialUntil: string | null; note: string | null },
+  u: {
+    username: string; passwordHash: string; role: Role; shopId: number; trialFrom: string | null; trialUntil: string | null; note: string | null;
+    channelId?: number | null;
+  },
 ) {
   const { insertId } = await db.run(
-    'INSERT INTO users (shop_id, username, password_hash, role, trial_from, trial_until, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [u.shopId, u.username, u.passwordHash, u.role, u.trialFrom, u.trialUntil, u.note],
+    'INSERT INTO users (shop_id, username, password_hash, role, trial_from, trial_until, note, channel_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [u.shopId, u.username, u.passwordHash, u.role, u.trialFrom, u.trialUntil, u.note, u.channelId ?? null],
   );
   return insertId;
 }
@@ -242,17 +250,22 @@ export async function upsertUser(db: Db, username: string, passwordHash: string,
 // ---- tenant checks: which shop owns a given row (undefined if the row doesn't exist)
 
 const ownerQueries = {
-  chat: 'SELECT ch.shop_id AS shopId FROM chats c JOIN channels ch ON ch.id = c.channel_id WHERE c.id = ?',
-  note: 'SELECT ch.shop_id AS shopId FROM notes n JOIN chats c ON c.id = n.chat_id JOIN channels ch ON ch.id = c.channel_id WHERE n.id = ?',
+  chat: 'SELECT ch.shop_id AS shopId, ch.id AS channelId FROM chats c JOIN channels ch ON ch.id = c.channel_id WHERE c.id = ?',
+  note: 'SELECT ch.shop_id AS shopId, ch.id AS channelId FROM notes n JOIN chats c ON c.id = n.chat_id JOIN channels ch ON ch.id = c.channel_id WHERE n.id = ?',
   followup:
-    'SELECT ch.shop_id AS shopId FROM followups f JOIN chats c ON c.id = f.chat_id JOIN channels ch ON ch.id = c.channel_id WHERE f.id = ?',
-  channel: 'SELECT shop_id AS shopId FROM channels WHERE id = ?',
-  quickReply: 'SELECT shop_id AS shopId FROM quick_replies WHERE id = ?',
+    'SELECT ch.shop_id AS shopId, ch.id AS channelId FROM followups f JOIN chats c ON c.id = f.chat_id JOIN channels ch ON ch.id = c.channel_id WHERE f.id = ?',
+  channel: 'SELECT shop_id AS shopId, id AS channelId FROM channels WHERE id = ?',
+  quickReply: 'SELECT shop_id AS shopId, NULL AS channelId FROM quick_replies WHERE id = ?',
 } as const;
 
 export async function shopOf(db: Db, kind: keyof typeof ownerQueries, id: number): Promise<number | undefined> {
-  const [row] = await db.query<{ shopId: number }>(ownerQueries[kind], [id]);
-  return row?.shopId;
+  return (await ownerOf(db, kind, id))?.shopId;
+}
+
+/** The shop and WhatsApp number a row belongs to (undefined if the row doesn't exist). */
+export async function ownerOf(db: Db, kind: keyof typeof ownerQueries, id: number) {
+  const [row] = await db.query<{ shopId: number; channelId: number | null }>(ownerQueries[kind], [id]);
+  return row;
 }
 
 const channelCols = 'id, shop_id AS shopId, agent_name AS agentName, phone, status';
@@ -283,6 +296,8 @@ export async function deleteChannel(db: Db, id: number) {
   await db.run('DELETE r FROM resolutions r JOIN chats c ON c.id = r.chat_id WHERE c.channel_id = ?', [id]);
   await db.run('DELETE FROM chats WHERE channel_id = ?', [id]);
   await db.run('DELETE FROM channels WHERE id = ?', [id]);
+  // Sales logins on this number see nothing until the owner picks another.
+  await db.run('UPDATE users SET channel_id = NULL WHERE channel_id = ?', [id]);
 }
 
 /** New leads land in the shop's first pipeline stage (whatever the shop renamed it to). */
@@ -652,9 +667,13 @@ export interface Followup {
   stage: string | null;
 }
 
-export function listFollowups(db: Db, shopId: number, opts: { chatId?: number; includeDone?: boolean } = {}) {
+export function listFollowups(db: Db, shopId: number, opts: { chatId?: number; channelId?: number; includeDone?: boolean } = {}) {
   const where = ['ch.shop_id = ?'];
   const params: unknown[] = [shopId];
+  if (opts.channelId !== undefined) {
+    where.push('c.channel_id = ?');
+    params.push(opts.channelId);
+  }
   if (opts.chatId !== undefined) {
     where.push('f.chat_id = ?');
     params.push(opts.chatId);

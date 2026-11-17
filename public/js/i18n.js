@@ -456,4 +456,11 @@ const EN = {
   'Hanya owner yang bisa mengatur tim': 'Only the owner can manage the team',
   'Username 3–30 huruf kecil, angka, titik, - atau _': 'Username: 3–30 lowercase letters, digits, dots, - or _',
   'Username sudah dipakai': 'That username is taken',
+  'Login untuk sales / admin. Masing-masing hanya melihat chat dari nomor WA yang dipilih. Mereka bisa membalas chat, mengatur lead, follow-up dan pipeline, tapi tidak bisa melihat laporan, mengubah nomor WA atau pengaturan.':
+    "Logins for sales / admins. Each sees only the chats of the WhatsApp number picked for it. They can reply to chats and manage leads, follow-ups and the pipeline, but can't see reports or change WhatsApp numbers or settings.",
+  'Belum dipilih (tidak melihat chat)': 'Not picked (sees no chats)',
+  'Nomor {user} disimpan': "{user}'s number saved",
+  'Nomor WA tidak ditemukan': 'WhatsApp number not found',
+  'Belum ada nomor untuk akun ini': 'No number for this account yet',
+  'Minta owner memilih nomor WA Anda di Pengaturan → Tim.': 'Ask the owner to pick your WhatsApp number in Settings → Team.',
 };

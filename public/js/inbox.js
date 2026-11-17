@@ -171,7 +171,9 @@ export function mountInbox({ app, list, main, navigate }) {
   function renderList() {
     $('#ib-count', list).textContent = chats.length ? `${chats.length}${hasMore ? '+' : ''} ${t('chat')}` : '';
     if (!chats.length) {
-      if (!store.channels.length) {
+      if (!store.channels.length && store.session?.role === 'sales') {
+        listEl.innerHTML = empty({ ico: 'phone', title: t('Belum ada nomor untuk akun ini'), text: t('Minta owner memilih nomor WA Anda di Pengaturan → Tim.') });
+      } else if (!store.channels.length) {
         listEl.innerHTML = empty({ ico: 'phone', title: t('Belum ada nomor WhatsApp'), text: t('Hubungkan nomor sales untuk mulai memantau chat.'), action: t('Hubungkan nomor'), actionId: 'ib-go-numbers' });
         $('#ib-go-numbers', listEl).onclick = () => navigate('#/numbers');
       } else if (filter.q || filter.mode !== 'all' || filter.channelId) {

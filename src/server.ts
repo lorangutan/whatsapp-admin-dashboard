@@ -14,7 +14,7 @@ import { defaultPrefs, type ShopPrefs, type Stage } from './db/schema.js';
 import { localDayStart } from './sla/businessHours.js';
 import { buildReport, shopClock } from './report/service.js';
 import { formatDailyReport, sendDailyReport } from './report/daily.js';
-import { buildToday, formatToday, sendMorningList } from './report/today.js';
+import { buildToday, formatToday, forChannel, sendMorningList } from './report/today.js';
 
 const DAY = 86_400_000;
 
@@ -47,9 +47,12 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   const shopOf = (req: FastifyRequest) => repo.getShop(db, req.session.shopId);
 
-  /** Throws 404 unless the row belongs to the caller's shop. */
-  async function own(req: FastifyRequest, kind: Parameters<typeof repo.shopOf>[1], id: number) {
-    if (!Number.isInteger(id) || (await repo.shopOf(db, kind, id)) !== req.session.shopId) throw notFound();
+  /** Throws 404 unless the row belongs to the caller's shop (and, for a sales login, to their own number). */
+  async function own(req: FastifyRequest, kind: Parameters<typeof repo.ownerOf>[1], id: number) {
+    const row = Number.isInteger(id) ? await repo.ownerOf(db, kind, id) : undefined;
+    if (!row || row.shopId !== req.session.shopId) throw notFound();
+    const only = req.session.onlyChannel;
+    if (only !== undefined && kind !== 'quickReply' && row.channelId !== only) throw notFound();
     return id;
   }
 
@@ -77,7 +80,10 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
       connection: 'keep-alive',
     });
     reply.raw.write('retry: 2000\n\n');
+    const only = req.session.onlyChannel;
     const unsubscribe = bus.subscribe((e) => {
+      // A sales login hears nothing about other numbers' status; chat ids alone reveal nothing.
+      if (only !== undefined && e.type === 'channel' && e.channelId !== only) return;
       if (e.shopId === shopId) reply.raw.write(`data: ${JSON.stringify(e)}\n\n`);
     });
     const ping = setInterval(() => reply.raw.write(': ping\n\n'), 25_000);
@@ -121,7 +127,9 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   // ---- numbers
   app.get('/api/channels', async (req) =>
-    (await repo.listChannels(db, req.session.shopId)).map((c) => ({ ...c, ...channels.state(c.id) })),
+    (await repo.listChannels(db, req.session.shopId))
+      .filter((c) => req.session.onlyChannel === undefined || c.id === req.session.onlyChannel)
+      .map((c) => ({ ...c, ...channels.state(c.id) })),
   );
 
   app.post<{ Body: { agentName: string } }>('/api/channels', { preHandler: ownerOnly }, async (req, reply) => {
@@ -162,7 +170,10 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
   });
 
   // ---- today's to-do list ("Hari ini"): the inbox card and the morning WhatsApp message
-  app.get('/api/today', async (req) => buildToday(db, await shopOf(req), channels));
+  app.get('/api/today', async (req) => {
+    const list = await buildToday(db, await shopOf(req), channels);
+    return req.session.onlyChannel === undefined ? list : forChannel(list, req.session.onlyChannel);
+  });
 
   app.get('/api/today/preview', { preHandler: noSales }, async (req) => {
     const s = await shopOf(req);
@@ -194,7 +205,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
   }>('/api/chats', async (req) => {
     const q = req.query;
     return repo.listChats(db, req.session.shopId, {
-      channelId: q.channelId ? Number(q.channelId) : undefined,
+      channelId: req.session.onlyChannel ?? (q.channelId ? Number(q.channelId) : undefined),
       q: q.q || undefined,
       stage: q.stage || undefined,
       unreplied: q.unreplied === '1',
@@ -206,7 +217,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   app.get<IdParams>('/api/chats/:id', async (req) => {
     const shopId = req.session.shopId;
-    const chat = await repo.getChat(db, shopId, Number(req.params.id));
+    const chat = await repo.getChat(db, shopId, await own(req, 'chat', Number(req.params.id)));
     if (!chat) throw notFound();
     const [notes, followups] = await Promise.all([
       repo.listNotes(db, chat.id),
@@ -279,7 +290,7 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
 
   // ---- follow-ups
   app.get<{ Querystring: { includeDone?: string } }>('/api/followups', (req) =>
-    repo.listFollowups(db, req.session.shopId, { includeDone: req.query.includeDone === '1' }),
+    repo.listFollowups(db, req.session.shopId, { includeDone: req.query.includeDone === '1', channelId: req.session.onlyChannel }),
   );
 
   app.post<IdParams & { Body: { dueAt: string; note?: string } }>('/api/chats/:id/followups', async (req, reply) => {

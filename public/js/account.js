@@ -3,7 +3,14 @@ import { api, $, $$, esc, icon, toast, listTime } from './lib.js';
 import { store } from './store.js';
 import { t } from './i18n.js';
 
-const canChangePassword = () => store.session?.required && store.session.role !== 'demo' && !store.session.via;
+/** <option>s for the number a sales login sees; "none" until the owner picks one. */
+const numberOptions = (selected) =>
+  `<option value="" ${selected == null ? 'selected' : ''}>${t('Belum dipilih (tidak melihat chat)')}</option>` +
+  store.channels
+    .map((c) => `<option value="${c.id}" ${c.id === selected ? 'selected' : ''}>${esc(c.agentName)}${c.phone ? ` · +${esc(c.phone)}` : ''}</option>`)
+    .join('');
+
+const canChangePassword =() => store.session?.required && store.session.role !== 'demo' && !store.session.via;
 const isOwner = () => ['owner', 'dev'].includes(store.session?.role) && store.session?.required;
 
 export function accountCards() {
@@ -19,11 +26,12 @@ export function accountCards() {
     </form>` : ''}
     ${isOwner() ? `<div class="card owner-only" id="st-team" style="display:grid;gap:8px">
       <h2>${t('Tim')}</h2>
-      <div class="faint small">${t('Login untuk sales / admin. Mereka bisa membalas chat, mengatur lead, follow-up dan pipeline, tapi tidak bisa melihat laporan, mengubah nomor WA atau pengaturan.')}</div>
+      <div class="faint small">${t('Login untuk sales / admin. Masing-masing hanya melihat chat dari nomor WA yang dipilih. Mereka bisa membalas chat, mengatur lead, follow-up dan pipeline, tapi tidak bisa melihat laporan, mengubah nomor WA atau pengaturan.')}</div>
       <div id="st-team-list"></div>
       <form id="st-team-add" class="pw-form" autocomplete="off">
         <label class="field">${t('Username')} <input class="input" name="username" placeholder="${t('mis. rizky')}" autocapitalize="none" spellcheck="false" required></label>
         <label class="field">${t('Password')} <input class="input" type="text" name="password" minlength="8" placeholder="${t('min. 8 karakter')}" autocomplete="new-password" required></label>
+        <label class="field">${t('Nomor WA')} <select class="input" name="channelId">${numberOptions(store.channels[0]?.id ?? null)}</select></label>
         <div><button class="btn" type="submit">${icon('plus', 16)} ${t('Tambah login sales')}</button></div>
       </form>
     </div>` : ''}`;
@@ -56,7 +64,8 @@ export function mountAccount(main) {
     listEl.innerHTML = rows.length
       ? rows.map((u) => `<div class="team-row" data-id="${u.id}">
           <div class="who"><b>${esc(u.username)}</b> ${u.disabled ? `<span class="small bad">· ${t('nonaktif')}</span>` : ''}
-            <div class="faint small">${u.lastLoginAt ? t('Terakhir masuk {when}', { when: listTime(u.lastLoginAt) }) : t('Belum pernah masuk')}</div></div>
+            <div class="faint small">${u.lastLoginAt ? t('Terakhir masuk {when}', { when: listTime(u.lastLoginAt) }) : t('Belum pernah masuk')}</div>
+            <select class="input team-number" data-act="number" aria-label="${t('Nomor WA')}">${numberOptions(u.channelId)}</select></div>
           <div class="acts">
             <button class="btn ghost" type="button" data-act="reset">${t('Reset password')}</button>
             <button class="btn ghost" type="button" data-act="toggle">${u.disabled ? t('Aktifkan') : t('Nonaktifkan')}</button>
@@ -66,7 +75,17 @@ export function mountAccount(main) {
     for (const row of $$('.team-row', listEl)) {
       const id = Number(row.dataset.id);
       const u = rows.find((r) => r.id === id);
-      for (const b of $$('[data-act]', row)) {
+      const sel = $('[data-act="number"]', row);
+      sel.onchange = async () => {
+        try {
+          render(await api(`/api/team/${id}`, { method: 'PATCH', body: { channelId: sel.value ? Number(sel.value) : null } }));
+          toast(t('Nomor {user} disimpan', { user: u.username }));
+        } catch (err) {
+          toast(err.message, { error: true });
+          sel.value = u.channelId ?? '';
+        }
+      };
+      for (const b of $$('button[data-act]', row)) {
         b.onclick = async () => {
           try {
             if (b.dataset.act === 'reset') {
@@ -92,7 +111,10 @@ export function mountAccount(main) {
   add.onsubmit = async (e) => {
     e.preventDefault();
     try {
-      render(await api('/api/team', { method: 'POST', body: { username: add.username.value, password: add.password.value } }));
+      render(await api('/api/team', {
+        method: 'POST',
+        body: { username: add.username.value, password: add.password.value, channelId: add.channelId.value ? Number(add.channelId.value) : null },
+      }));
       toast(t('Login {user} dibuat', { user: add.username.value.trim().toLowerCase() }));
       add.reset();
     } catch (err) {

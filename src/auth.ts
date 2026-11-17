@@ -15,6 +15,8 @@ export interface Session {
   role: Role;
   /** Set when a dev is looking at the app as this account: the dev's username, to switch back. */
   via?: string;
+  /** Sales logins: the only WhatsApp number whose chats they may see (0: none yet). Set per request. */
+  onlyChannel?: number;
 }
 
 declare module 'fastify' {
@@ -165,6 +167,9 @@ export function passwordProblem(p: unknown) {
   return null;
 }
 
+/** A sales login sees one number's chats; everyone else sees the whole shop. */
+const scopeOf = (user: User) => (user.role === 'sales' ? { onlyChannel: user.channelId ?? 0 } : {});
+
 /** The stored account behind a cookie, checked again; null means the cookie is no longer good. */
 async function recheck(db: Db, s: Session): Promise<Session | null> {
   const user = await currentUser(db, s.username);
@@ -174,14 +179,15 @@ async function recheck(db: Db, s: Session): Promise<Session | null> {
   if (s.via) {
     // A dev looking at the app as this account: the dev must still be an active dev.
     const dev = await currentUser(db, s.via);
-    return dev?.role === 'dev' && !dev.disabled ? { ...s, shopId: user.shopId } : null;
+    return dev?.role === 'dev' && !dev.disabled ? { ...s, shopId: user.shopId, ...scopeOf(user) } : null;
   }
   if (user.role === 'sales') {
     if (accessProblem(user)) return null;
     const owner = await currentOwner(db, user.shopId);
     if (owner && accessProblem(owner)) return null;
   } else if (user.role !== 'dev' && accessProblem(user)) return null;
-  return { ...s, shopId: user.shopId, role: user.role };
+  const { onlyChannel: _old, ...base } = s;
+  return { ...base, shopId: user.shopId, role: user.role, ...scopeOf(user) };
 }
 
 /** Logs this browser in as `session` (Admin uses it to look at the app as another account). */
@@ -210,6 +216,7 @@ export function registerAuth(app: FastifyInstance, db: Db) {
       role: live.role,
       shopName: shop.name,
       via: live.via ?? null,
+      onlyChannel: live.onlyChannel ?? null,
       trialFrom: user?.trialFrom ?? null,
       trialUntil: user?.trialUntil ?? null,
     };
