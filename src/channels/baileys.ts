@@ -77,7 +77,7 @@ export class BaileysAdapter implements ChannelAdapter {
 
     // Recent history the phone shares on link, so the owner sees SLA numbers from day one.
     sock.ev.on('messaging-history.set', ({ messages, contacts, lidPnMappings }) => {
-      this.enqueue(async () => {
+      this.enqueue('history', async () => {
         if (lidPnMappings?.length) await this.learnMappings(lidPnMappings);
         await this.emitContacts(contacts);
         await this.events.onMessages(await this.convert(messages));
@@ -86,18 +86,35 @@ export class BaileysAdapter implements ChannelAdapter {
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
       // 'notify' = arrived just now; 'append' = catch-up after a reconnect.
-      this.enqueue(async () => this.events.onMessages(await this.convert(messages, type === 'notify')));
+      this.enqueue(`messages:${type}`, async () => this.events.onMessages(await this.convert(messages, type === 'notify')));
     });
 
-    sock.ev.on('lid-mapping.update', (mapping) => this.enqueue(() => this.learnMappings([mapping])));
-    sock.ev.on('contacts.upsert', (contacts) => this.enqueue(() => this.emitContacts(contacts)));
-    sock.ev.on('contacts.update', (contacts) => this.enqueue(() => this.emitContacts(contacts)));
+    sock.ev.on('lid-mapping.update', (mapping) => this.enqueue('lid-mapping', () => this.learnMappings([mapping])));
+    sock.ev.on('contacts.upsert', (contacts) => this.enqueue('contacts', () => this.emitContacts(contacts)));
+    sock.ev.on('contacts.update', (contacts) => this.enqueue('contacts', () => this.emitContacts(contacts)));
   }
 
-  /** Events are handled one at a time so merges and inserts for the same chat never interleave. */
+  /**
+   * Events are handled one at a time so merges and inserts for the same chat never interleave.
+   * A step that never settles would otherwise block every later message for good, silently (this happened
+   * on 2026-11-19: messages kept arriving but nothing was saved until a restart), so each step gets a time
+   * limit: past it we log which step hung and move on.
+   */
   private queue: Promise<unknown> = Promise.resolve();
-  private enqueue(task: () => Promise<unknown>) {
-    this.queue = this.queue.then(task).catch(() => undefined);
+  private enqueue(label: string, task: () => Promise<unknown>) {
+    this.queue = this.queue.then(async () => {
+      let timer: NodeJS.Timeout | undefined;
+      const limit = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${TASK_TIMEOUT_MS / 1000}s`)), TASK_TIMEOUT_MS);
+      });
+      try {
+        await Promise.race([task(), limit]);
+      } catch (err) {
+        this.events.onQueueProblem?.(label, (err as Error).message);
+      } finally {
+        clearTimeout(timer);
+      }
+    });
   }
 
   private lidToPn = new Map<string, string>();
@@ -116,14 +133,17 @@ export class BaileysAdapter implements ChannelAdapter {
     const lid = jidNormalizedUser(jid);
     const known = this.lidToPn.get(lid);
     if (known) return known;
-    const pn = await this.sock?.signalRepository.lidMapping.getPNForLID(lid).catch(() => null);
+    // Asks WhatsApp's key store, which can wait indefinitely around a reconnect; a chat filed under the
+    // LID for now is merged into the phone-number chat later, once the mapping arrives.
+    const sock = this.sock;
+    const pn = sock ? await withTimeout(sock.signalRepository.lidMapping.getPNForLID(lid), LID_LOOKUP_TIMEOUT_MS).catch(() => null) : null;
     if (!pn) return lid;
     await this.learnMappings([{ lid, pn }]);
     return jidNormalizedUser(pn);
   }
 
   async resolveLids(lids: string[]): Promise<void> {
-    this.enqueue(async () => {
+    this.enqueue('resolve-lids', async () => {
       for (const lid of lids) await this.phoneJid(lid);
     });
   }
@@ -171,6 +191,20 @@ export class BaileysAdapter implements ChannelAdapter {
     const sent = await this.sock.sendMessage(jid, { text });
     return { waId: sent?.key.id ?? `local-${Date.now()}`, sentAt: new Date() };
   }
+}
+
+/** A queue step that takes longer than this is assumed stuck. History sync of a busy number fits well inside it. */
+const TASK_TIMEOUT_MS = 120_000;
+const LID_LOOKUP_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${ms / 1000}s`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 function isPersonalChat(jid: string): boolean {

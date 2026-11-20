@@ -94,6 +94,9 @@ export class ChannelManager {
       onDisconnect: (code, reason) => {
         this.log.warn({ channelId, code, reason }, 'channel disconnected');
       },
+      onQueueProblem: (step, problem) => {
+        this.log.error({ channelId, step, problem }, 'whatsapp event step skipped');
+      },
       onContacts: async (contacts) => {
         try {
           await setContactNames(this.db, channelId, contacts);
