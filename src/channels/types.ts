@@ -39,6 +39,8 @@ export interface ChannelEvents {
   onContacts?(contacts: { jids: string[]; name: string }[]): void | Promise<void>;
   /** WhatsApp revealed which phone number hides behind a LID; chats stored under the LID should merge. */
   onLidMappings?(mappings: { lid: string; pn: string }[]): void | Promise<void>;
+  /** A batch of messages arrived from WhatsApp (before it is converted or saved), for the log. */
+  onReceived?(info: { type: string; total: number; chats: number; undecryptable: number; kinds: string }): void;
   /** A step of the event queue failed or hung and was skipped (e.g. label "messages:notify"). */
   onQueueProblem?(label: string, problem: string): void;
 }

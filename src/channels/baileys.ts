@@ -85,6 +85,14 @@ export class BaileysAdapter implements ChannelAdapter {
     });
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
+      // One line per batch, so "nothing arrived" and "arrived but was dropped" can be told apart in the log.
+      this.events.onReceived?.({
+        type,
+        total: messages.length,
+        chats: messages.filter((m) => toInbound(m) !== null).length,
+        undecryptable: messages.filter((m) => m.messageStubType === 2 /* CIPHERTEXT */).length,
+        kinds: [...new Set(messages.map((m) => jidKind(m.key.remoteJid)))].join(','),
+      });
       // 'notify' = arrived just now; 'append' = catch-up after a reconnect.
       this.enqueue(`messages:${type}`, async () => this.events.onMessages(await this.convert(messages, type === 'notify')));
     });
@@ -205,6 +213,13 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       timer = setTimeout(() => reject(new Error(`timed out after ${ms / 1000}s`)), ms);
     }),
   ]).finally(() => clearTimeout(timer));
+}
+
+/** Where a message came from, for the log only (never the number itself). */
+function jidKind(jid: string | null | undefined): string {
+  if (!jid) return 'none';
+  if (jid === 'status@broadcast') return 'status';
+  return jid.split('@')[1] ?? 'other';
 }
 
 function isPersonalChat(jid: string): boolean {

@@ -94,6 +94,9 @@ export class ChannelManager {
       onDisconnect: (code, reason) => {
         this.log.warn({ channelId, code, reason }, 'channel disconnected');
       },
+      onReceived: (info) => {
+        this.log.info({ channelId, ...info }, 'whatsapp batch received');
+      },
       onQueueProblem: (step, problem) => {
         this.log.error({ channelId, step, problem }, 'whatsapp event step skipped');
       },
