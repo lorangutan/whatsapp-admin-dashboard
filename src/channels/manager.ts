@@ -185,6 +185,15 @@ Cek HP-nya masih online, atau buka menu *Nomor WA* lalu scan ulang QR.`;
     this.live.delete(channelId);
   }
 
+  /**
+   * Re-link the same number with a fresh QR, keeping its chats, pipeline and notes: only this device's
+   * WhatsApp session is thrown away. The history WhatsApp sends after the scan skips what is already stored.
+   */
+  async relink(channelId: number) {
+    await this.remove(channelId);
+    await this.start(channelId);
+  }
+
   /** Reply in a chat from the number that owns it, and store the sent message right away. */
   async reply(channelId: number, remoteJid: string, text: string) {
     const entry = this.live.get(channelId);

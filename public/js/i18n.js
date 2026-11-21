@@ -289,6 +289,12 @@ const EN = {
   'Hubungkan ulang': 'Reconnect',
   Hapus: 'Remove',
   'Putuskan nomor {name} dan hapus semua chat-nya dari dashboard?': "Disconnect {name}'s number and remove all its chats from the dashboard?",
+  'Scan ulang QR': 'Re-scan QR',
+  'QR baru untuk nomor yang sama. Chat, pipeline, dan catatan tetap ada.': 'New QR for the same number. Chats, pipeline and notes stay.',
+  'Scan ulang QR untuk {name}?\n\nChat, pipeline, dan catatan tetap ada. Setelah ini, scan QR baru dengan HP nomor yang sama: WhatsApp → Perangkat tertaut → Tautkan perangkat.':
+    "Re-scan the QR for {name}?\n\nChats, pipeline and notes stay. Then scan the new QR with the phone of the same number: WhatsApp → Linked devices → Link a device.",
+  'Hapus nomor {name} beserta SEMUA chat, tahap pipeline, catatan, dan follow-up-nya? Ini tidak bisa dibatalkan.\n\nMau menautkan ulang nomor yang sama? Pakai "Scan ulang QR" saja, data tetap aman.':
+    'Delete {name}\'s number with ALL its chats, pipeline stages, notes and follow-ups? This cannot be undone.\n\nWant to re-link the same number? Use "Re-scan QR" instead, your data stays safe.',
 
   // settings
   Tampilan: 'Appearance',

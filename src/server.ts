@@ -145,6 +145,12 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
     return { ok: true };
   });
 
+  // New QR for the same number, chats kept (e.g. after WhatsApp stopped delivering to this device).
+  app.post<IdParams>('/api/channels/:id/relink', { preHandler: ownerOnly }, async (req) => {
+    await channels.relink(await own(req, 'channel', Number(req.params.id)));
+    return { ok: true };
+  });
+
   app.delete<IdParams>('/api/channels/:id', { preHandler: ownerOnly }, async (req) => {
     const id = await own(req, 'channel', Number(req.params.id));
     await channels.remove(id);

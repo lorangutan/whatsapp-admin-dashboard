@@ -58,8 +58,9 @@ export function mountNumbers({ main }) {
           <div class="muted small">${esc(c.phone ? `+${c.phone}` : t('Nomor belum tertaut'))}</div>
           ${c.qr ? `<img src="${c.qr}" alt="QR ${esc(c.agentName)}">` : ''}
           <div class="owner-only" style="display:flex;gap:6px;margin-top:12px">
-            ${c.status !== 'connected' ? `<button class="btn ghost sm" data-reconnect="${c.id}">${icon('refresh', 14)} ${t('Hubungkan ulang')}</button>` : ''}
-            <button class="btn danger sm" data-remove="${c.id}">${icon('trash', 14)} ${t('Hapus')}</button>
+            ${c.status !== 'connected' && c.status !== 'qr' ? `<button class="btn ghost sm" data-reconnect="${c.id}">${icon('refresh', 14)} ${t('Hubungkan ulang')}</button>` : ''}
+            ${c.status !== 'qr' ? `<button class="btn ghost sm" data-relink="${c.id}" title="${esc(t('QR baru untuk nomor yang sama. Chat, pipeline, dan catatan tetap ada.'))}">${icon('phone', 14)} ${t('Scan ulang QR')}</button>` : ''}
+            <button class="btn danger sm" data-remove="${c.id}" style="margin-left:auto">${icon('trash', 14)} ${t('Hapus')}</button>
           </div>
         </div>`;
       })
@@ -73,10 +74,21 @@ export function mountNumbers({ main }) {
         refreshChannels();
       };
     }
+    for (const b of $$('[data-relink]', host)) {
+      b.onclick = async () => {
+        const c = store.channels.find((x) => x.id === Number(b.dataset.relink));
+        if (!confirm(t('Scan ulang QR untuk {name}?\n\nChat, pipeline, dan catatan tetap ada. Setelah ini, scan QR baru dengan HP nomor yang sama: WhatsApp → Perangkat tertaut → Tautkan perangkat.', { name: c.agentName }))) return;
+        c.status = 'connecting';
+        c.qr = null;
+        render();
+        await api(`/api/channels/${c.id}/relink`, { method: 'POST' }).catch((err) => toast(err.message, { error: true }));
+        refreshChannels();
+      };
+    }
     for (const b of $$('[data-remove]', host)) {
       b.onclick = async () => {
         const c = store.channels.find((x) => x.id === Number(b.dataset.remove));
-        if (!confirm(t('Putuskan nomor {name} dan hapus semua chat-nya dari dashboard?', { name: c.agentName }))) return;
+        if (!confirm(t('Hapus nomor {name} beserta SEMUA chat, tahap pipeline, catatan, dan follow-up-nya? Ini tidak bisa dibatalkan.\n\nMau menautkan ulang nomor yang sama? Pakai "Scan ulang QR" saja, data tetap aman.', { name: c.agentName }))) return;
         store.channels = store.channels.filter((x) => x !== c);
         render();
         await api(`/api/channels/${c.id}`, { method: 'DELETE' }).catch((err) => toast(err.message, { error: true }));
