@@ -607,7 +607,7 @@ export function openConversation(host, chatId, { onBack } = {}) {
     chatId,
     onLive(e) {
       if (!chat) return;
-      if (e.type === 'messages' && e.chatIds.includes(chatId)) refreshLatest();
+      if (e.type === 'messages' && (e.resync || e.chatIds.includes(chatId))) refreshLatest();
       if (e.type === 'chat' && e.chatId === chatId) reloadDetail();
       if (e.type === 'followups') reloadDetail();
       if (e.type === 'channel' && e.channelId === chat.channelId) {

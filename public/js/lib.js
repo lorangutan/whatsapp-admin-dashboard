@@ -16,13 +16,45 @@ export async function api(path, opts = {}) {
   return data;
 }
 
-/** Server-Sent Events stream; reconnects on its own. */
+/**
+ * Server-Sent Events stream that heals itself. The browser's own retry doesn't cover two cases that left
+ * dashboards silently stale: a connection that died while the laptop slept (no error, just nothing more),
+ * and a server restart answered with an error page (the browser then gives up for good). The server pings
+ * every 20 s; when pings stop, or the tab comes back to view after a while, open a fresh stream.
+ * onState(up, quiet): quiet = a routine reconnect the user needn't be told about.
+ */
 export function liveEvents(onEvent, onState) {
-  const es = new EventSource('/api/events');
-  es.onmessage = (e) => onEvent(JSON.parse(e.data));
-  es.onopen = () => onState?.(true);
-  es.onerror = () => onState?.(false);
-  return es;
+  const STALE_MS = 50_000;
+  let es;
+  let lastSeen = Date.now();
+  const open = () => {
+    es?.close();
+    lastSeen = Date.now();
+    es = new EventSource('/api/events');
+    es.onmessage = (e) => {
+      lastSeen = Date.now();
+      onEvent(JSON.parse(e.data));
+    };
+    es.addEventListener('ping', () => (lastSeen = Date.now()));
+    es.onopen = () => {
+      lastSeen = Date.now();
+      onState?.(true);
+    };
+    es.onerror = () => onState?.(false);
+  };
+  const reopenIfStale = () => {
+    if (es.readyState === EventSource.CLOSED || Date.now() - lastSeen > STALE_MS) {
+      onState?.(false, true);
+      open();
+    }
+  };
+  open();
+  setInterval(reopenIfStale, 10_000);
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && reopenIfStale());
+  window.addEventListener('online', () => {
+    onState?.(false, true);
+    open();
+  });
 }
 
 // ---------- tiny utils ----------

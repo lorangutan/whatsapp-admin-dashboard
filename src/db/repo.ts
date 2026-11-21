@@ -392,15 +392,26 @@ export async function saveMessages(db: Db, channelId: number, messages: InboundM
   return touched;
 }
 
+/**
+ * A phone's whole address book arrives at once (thousands of entries), and one UPDATE each took over
+ * two minutes and held up live messages. So read the number's chats once and only write names that changed.
+ */
 export async function setContactNames(db: Db, channelId: number, contacts: { jids: string[]; name: string }[]) {
+  const chats = await db.query<{ id: number; remote_jid: string; contact_name: string | null }>(
+    'SELECT id, remote_jid, contact_name FROM chats WHERE channel_id = ?',
+    [channelId],
+  );
+  const byJid = new Map(chats.map((c) => [c.remote_jid, c]));
+  const changed = new Map<number, string>();
   for (const c of contacts) {
-    if (!c.jids.length) continue;
-    await db.run('UPDATE chats SET contact_name = ? WHERE channel_id = ? AND remote_jid IN (?)', [
-      c.name,
-      channelId,
-      c.jids,
-    ]);
+    for (const jid of c.jids) {
+      const chat = byJid.get(jid);
+      if (!chat || chat.contact_name === c.name) continue;
+      chat.contact_name = c.name;
+      changed.set(chat.id, c.name);
+    }
   }
+  for (const [id, name] of changed) await db.run('UPDATE chats SET contact_name = ? WHERE id = ?', [name, id]);
 }
 
 /**

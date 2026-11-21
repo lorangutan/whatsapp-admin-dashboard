@@ -29,6 +29,7 @@ const salesDenied = () =>
 
 export function buildServer(db: Db, channels: ChannelManager, loggerInstance: FastifyBaseLogger) {
   const app = Fastify({ loggerInstance, disableRequestLogging: true, trustProxy: config.trustProxy });
+  const liveStreams = new Set<import('node:http').ServerResponse>();
 
   app.register(fastifyStatic, {
     root: path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public'),
@@ -78,19 +79,28 @@ export function buildServer(db: Db, channels: ChannelManager, loggerInstance: Fa
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
       connection: 'keep-alive',
+      'x-accel-buffering': 'no',
     });
     reply.raw.write('retry: 2000\n\n');
+    liveStreams.add(reply.raw);
     const only = req.session.onlyChannel;
     const unsubscribe = bus.subscribe((e) => {
       // A sales login hears nothing about other numbers' status; chat ids alone reveal nothing.
       if (only !== undefined && e.type === 'channel' && e.channelId !== only) return;
       if (e.shopId === shopId) reply.raw.write(`data: ${JSON.stringify(e)}\n\n`);
     });
-    const ping = setInterval(() => reply.raw.write(': ping\n\n'), 25_000);
+    // A named event (not a comment) so the page can see it: no ping for a while means the stream died
+    // silently (laptop slept, Wi-Fi changed) and the page reconnects and catches up.
+    const ping = setInterval(() => reply.raw.write('event: ping\ndata: \n\n'), 20_000);
     req.raw.on('close', () => {
       clearInterval(ping);
       unsubscribe();
+      liveStreams.delete(reply.raw);
     });
+  });
+  // Open streams never finish on their own, so without this a restart waits for systemd to kill us (90 s).
+  app.addHook('preClose', async () => {
+    for (const res of liveStreams) res.end();
   });
 
   // ---- shop & settings

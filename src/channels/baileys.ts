@@ -38,6 +38,7 @@ export class BaileysAdapter implements ChannelAdapter {
     // so ask web.whatsapp.com for the live version and fall back to Baileys' own list.
     const live = await fetchLatestWaWebVersion().catch(() => null);
     const { version } = live?.isLatest ? live : await fetchLatestBaileysVersion();
+    if (this.stopped) return; // stopped while we were getting ready
 
     const sock = makeWASocket({
       version,
@@ -76,17 +77,19 @@ export class BaileysAdapter implements ChannelAdapter {
         this.events.onStatus('connected', sock.user?.id.split(':')[0].split('@')[0]);
       }
       if (connection === 'close') {
+        // Stopped on purpose (server shutdown, "Scan ulang QR", "Hapus"): the manager already replaced or
+        // dropped this adapter, so a late status from it would overwrite the new one's, and a late
+        // `rm` could delete the session the new QR scan is writing.
+        if (this.stopped) return;
         const code = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output
           ?.statusCode;
         this.events.onDisconnect?.(code, lastDisconnect?.error?.message);
         if (code === DisconnectReason.loggedOut) {
           await rm(this.authDir, { recursive: true, force: true });
           this.events.onStatus('logged_out');
-        } else if (!this.stopped) {
-          // Network blips and the post-pairing restart (515) both land here.
-          setTimeout(() => void this.start(), 3_000);
         } else {
-          this.events.onStatus('disconnected');
+          // Network blips and the post-pairing restart (515) both land here.
+          this.scheduleRestart(3_000);
         }
       }
     });
@@ -101,6 +104,7 @@ export class BaileysAdapter implements ChannelAdapter {
     });
 
     sock.ev.on('messages.upsert', ({ messages, type }) => {
+      if (this.sock !== sock) return;
       // One line per batch, so "nothing arrived" and "arrived but was dropped" can be told apart in the log.
       this.events.onReceived?.({
         type,
@@ -109,8 +113,14 @@ export class BaileysAdapter implements ChannelAdapter {
         undecryptable: messages.filter((m) => m.messageStubType === 2 /* CIPHERTEXT */).length,
         kinds: [...new Set(messages.map((m) => jidKind(m.key.remoteJid)))].join(','),
       });
-      // 'notify' = arrived just now; 'append' = catch-up after a reconnect.
-      this.enqueue(`messages:${type}`, async () => this.events.onMessages(await this.convert(messages, type === 'notify')));
+      // 'notify' = arrived just now; 'append' = catch-up after a reconnect. A catch-up batch is mostly chats
+      // WhatsApp held back while we were away (155 of them on 2026-11-21), so its recent ones are new leads too.
+      const recentSince = Date.now() - CATCH_UP_AS_LIVE_MS;
+      this.enqueue(`messages:${type}`, async () =>
+        this.events.onMessages(
+          await this.convert(messages, (m) => type === 'notify' || Number(m.messageTimestamp ?? 0) * 1000 >= recentSince),
+        ),
+      );
     });
 
     sock.ev.on('lid-mapping.update', (mapping) => this.enqueue('lid-mapping', () => this.learnMappings([mapping])));
@@ -142,6 +152,8 @@ export class BaileysAdapter implements ChannelAdapter {
   }
 
   private lidToPn = new Map<string, string>();
+  /** LIDs WhatsApp had no phone number for, until when not to ask again. */
+  private lidMisses = new Map<string, number>();
 
   private async learnMappings(mappings: { lid: string; pn: string }[]) {
     const fresh = mappings
@@ -159,26 +171,45 @@ export class BaileysAdapter implements ChannelAdapter {
     if (known) return known;
     // Asks WhatsApp's key store, which can wait indefinitely around a reconnect; a chat filed under the
     // LID for now is merged into the phone-number chat later, once the mapping arrives.
+    // An unknown LID is usually unknown for every one of its messages: don't wait on it again for each.
+    if ((this.lidMisses.get(lid) ?? 0) > Date.now()) return lid;
     const sock = this.sock;
     const pn = sock ? await withTimeout(sock.signalRepository.lidMapping.getPNForLID(lid), LID_LOOKUP_TIMEOUT_MS).catch(() => null) : null;
-    if (!pn) return lid;
+    if (!pn) {
+      this.lidMisses.set(lid, Date.now() + LID_MISS_RETRY_MS);
+      return lid;
+    }
     await this.learnMappings([{ lid, pn }]);
     return jidNormalizedUser(pn);
   }
 
   async resolveLids(lids: string[]): Promise<void> {
     this.enqueue('resolve-lids', async () => {
-      for (const lid of lids) await this.phoneJid(lid);
+      for (const lid of lids) {
+        this.lidMisses.delete(lid); // a fresh connection may know it now
+        await this.phoneJid(lid);
+      }
     });
   }
 
-  private async convert(messages: WAMessage[], live = false): Promise<InboundMessage[]> {
+  /** `live`: counts as a fresh message, so a chat no one has triaged yet goes into the pipeline. */
+  private async convert(messages: WAMessage[], live: (m: WAMessage) => boolean = () => false): Promise<InboundMessage[]> {
     const out: InboundMessage[] = [];
     for (const m of messages) {
       const inbound = toInbound(m);
-      if (inbound) out.push({ ...inbound, remoteJid: await this.phoneJid(inbound.remoteJid), live });
+      if (inbound) out.push({ ...inbound, remoteJid: await this.phoneJid(inbound.remoteJid), live: live(m) });
     }
     return out;
+  }
+
+  private scheduleRestart(ms: number) {
+    setTimeout(() => {
+      if (this.stopped) return; // stopped or replaced meanwhile: don't bring back a second socket
+      this.start().catch((err) => {
+        this.events.onQueueProblem?.('reconnect', (err as Error).message);
+        this.scheduleRestart(30_000);
+      });
+    }, ms);
   }
 
   private async emitContacts(contacts: Partial<Contact>[]) {
@@ -220,6 +251,9 @@ export class BaileysAdapter implements ChannelAdapter {
 /** A queue step that takes longer than this is assumed stuck. History sync of a busy number fits well inside it. */
 const TASK_TIMEOUT_MS = 120_000;
 const LID_LOOKUP_TIMEOUT_MS = 10_000;
+const LID_MISS_RETRY_MS = 10 * 60_000;
+/** Catch-up messages newer than this are treated like live ones (see messages.upsert). */
+const CATCH_UP_AS_LIVE_MS = 2 * 24 * 60 * 60_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;

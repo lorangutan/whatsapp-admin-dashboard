@@ -292,18 +292,25 @@ async function start() {
   refreshBadges();
 
   let wasDown = false;
+  let toldDown = false;
   liveEvents(
     async (e) => {
       if (e.type === 'channel') await refreshChannels();
       current.view?.onLive?.(e);
       if (e.type === 'channel' || e.type === 'followups') refreshBadges();
     },
-    (up) => {
-      if (!up && !wasDown) toast(t('Koneksi ke server terputus, mencoba lagi…'), { error: true });
+    (up, quiet) => {
+      if (!up && !wasDown && !quiet) {
+        toast(t('Koneksi ke server terputus, mencoba lagi…'), { error: true });
+        toldDown = true;
+      }
       if (up && wasDown) {
-        toast(t('Tersambung lagi'));
+        if (toldDown) toast(t('Tersambung lagi'));
+        toldDown = false;
+        // Catch up on whatever happened while the stream was down, including the open chat.
         refreshChannels();
-        current.view?.onLive?.({ type: 'messages', chatIds: [] });
+        refreshBadges();
+        current.view?.onLive?.({ type: 'messages', chatIds: [], resync: true });
       }
       wasDown = !up;
     },
