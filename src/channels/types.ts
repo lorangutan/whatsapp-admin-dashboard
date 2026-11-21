@@ -41,6 +41,8 @@ export interface ChannelEvents {
   onLidMappings?(mappings: { lid: string; pn: string }[]): void | Promise<void>;
   /** A batch of messages arrived from WhatsApp (before it is converted or saved), for the log. */
   onReceived?(info: { type: string; total: number; chats: number; undecryptable: number; kinds: string }): void;
+  /** Status stanzas acknowledged on this connection so far (reported on the 1st and every 100th). */
+  onStatusAcks?(count: number): void;
   /** A step of the event queue failed or hung and was skipped (e.g. label "messages:notify"). */
   onQueueProblem?(label: string, problem: string): void;
 }

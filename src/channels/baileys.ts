@@ -7,6 +7,7 @@ import makeWASocket, {
   fetchLatestWaWebVersion,
   jidNormalizedUser,
   useMultiFileAuthState,
+  type BinaryNode,
   type Contact,
   type WAMessage,
   type WASocket,
@@ -50,6 +51,21 @@ export class BaileysAdapter implements ChannelAdapter {
     this.sock = sock;
 
     sock.ev.on('creds.update', saveCreds);
+
+    // WhatsApp now sends contacts' Status updates as a top-level <status> stanza, which this Baileys version
+    // never acknowledges. About 50 minutes later the server drops the stream ("Stream Errored (ack)") and,
+    // worse, holds back incoming chats meanwhile. Acknowledge them ourselves until Baileys does
+    // (https://github.com/WhiskeySockets/Baileys/issues/2858, PR #2883). We don't use statuses anyway.
+    let statusAcks = 0;
+    sock.ws.on('CB:status', (node: BinaryNode) => {
+      sock
+        .sendMessageAck(node)
+        .then(() => {
+          statusAcks++;
+          if (statusAcks === 1 || statusAcks % 100 === 0) this.events.onStatusAcks?.(statusAcks);
+        })
+        .catch((err) => this.events.onQueueProblem?.('status-ack', (err as Error).message));
+    });
 
     sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       if (qr) {
