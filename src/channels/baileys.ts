@@ -276,13 +276,15 @@ function isPersonalChat(jid: string): boolean {
   return jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid');
 }
 
-function toInbound(m: WAMessage): InboundMessage | null {
+export function toInbound(m: WAMessage): InboundMessage | null {
   const { key, message } = m;
   if (!key.remoteJid || !key.id || !message) return null;
+  // Check the chat itself first. A contact's Status post comes from status@broadcast but carries the
+  // poster's phone number as remoteJidAlt, so it used to be filed into their personal chat (2026-11-21).
+  if (!isPersonalChat(key.remoteJid)) return null; // skip groups, status, channels
   // Prefer the phone-number JID so the same customer maps to one chat whether WhatsApp
   // addresses them by phone or by LID.
   const remoteJid = [key.remoteJid, key.remoteJidAlt].find((j) => j?.endsWith('@s.whatsapp.net')) ?? key.remoteJid;
-  if (!isPersonalChat(remoteJid)) return null; // skip groups, status, channels
 
   const content = extractContent(message);
   if (!content) return null; // protocol/reaction/receipt noise

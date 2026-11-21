@@ -1,6 +1,6 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { BaileysAdapter } from './baileys.js';
+import { BaileysAdapter, toInbound } from './baileys.js';
 
 // The event queue handles steps one at a time. A step that never settles used to block every later
 // message for good (2026-11-19); now it is skipped after a time limit and reported.
@@ -34,4 +34,16 @@ test('a hung queue step is skipped and later steps still run', async () => {
   } finally {
     mock.timers.reset();
   }
+});
+
+// A contact's Status post arrives from status@broadcast with the poster's number as remoteJidAlt.
+// It must not land in their personal chat (it did at Clean Stop until 2026-11-21).
+test('status posts, groups and channels are not chats, even with a phone-number alt', () => {
+  const msg = (remoteJid: string, remoteJidAlt?: string) =>
+    ({ key: { remoteJid, remoteJidAlt, id: 'X1', fromMe: false }, message: { conversation: 'hi' }, messageTimestamp: 1 }) as never;
+  assert.equal(toInbound(msg('status@broadcast', '6281234@s.whatsapp.net')), null);
+  assert.equal(toInbound(msg('1203630@g.us', '6281234@s.whatsapp.net')), null);
+  assert.equal(toInbound(msg('1203630@newsletter')), null);
+  assert.equal(toInbound(msg('12345@lid', '6281234@s.whatsapp.net'))?.remoteJid, '6281234@s.whatsapp.net');
+  assert.equal(toInbound(msg('6281234@s.whatsapp.net'))?.remoteJid, '6281234@s.whatsapp.net');
 });
