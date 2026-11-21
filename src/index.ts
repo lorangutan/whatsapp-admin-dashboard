@@ -4,6 +4,7 @@ import { openDb } from './db/index.js';
 import { ChannelManager } from './channels/manager.js';
 import { scheduleDailyReport } from './report/daily.js';
 import { buildServer } from './server.js';
+import { opsAlert } from './ops.js';
 
 const log = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 const db = await openDb();
@@ -16,7 +17,10 @@ const timer = scheduleDailyReport(db, channels, log);
 const watchdog = channels.watch();
 
 // One stray failure (a DB hiccup in a background step) must not take every WhatsApp number offline.
-process.on('unhandledRejection', (err) => log.error({ err }, 'unhandled rejection'));
+process.on('unhandledRejection', (err) => {
+  log.error({ err }, 'unhandled rejection');
+  opsAlert(log, 'unhandled', `Error tak tertangani: ${(err as Error)?.message ?? err}`);
+});
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {

@@ -7,6 +7,8 @@ import {
   getShop, lidChatJids, listAllChannels, mergeLidChats, saveMessages, setChannelStatus, setContactNames, shopOf,
 } from '../db/repo.js';
 import { bus } from '../events.js';
+import { opsAlert } from '../ops.js';
+import { businessMs } from '../sla/businessHours.js';
 import { BaileysAdapter } from './baileys.js';
 import type { ChannelAdapter, ChannelStatus } from './types.js';
 
@@ -28,13 +30,27 @@ interface LiveChannel {
   downSince: number | null;
   /** The owner has been told about this outage (or it was logged out, which needs a new QR). */
   alerted: boolean;
+  /** Last time a live chat message came through (or when it connected); see checkSilence. */
+  lastChatAt: number;
 }
 
 /** Network blips reconnect within seconds; only an outage this long is worth waking the owner for. */
 const ALERT_AFTER_MS = 5 * 60_000;
+/**
+ * Twice (19 and 21 Nov 2026) a number showed "connected" while WhatsApp held its chats back for hours.
+ * After this much opening time without a single chat, reconnect quietly: a healthy number loses nothing,
+ * and a stuck one gets its held chats released.
+ */
+const SILENT_OPEN_MS = 90 * 60_000;
+/** A catch-up batch this soon after a silence reconnect means chats really were held back. */
+const HELD_WINDOW_MS = 10 * 60_000;
 
 export class ChannelManager {
   private live = new Map<number, LiveChannel>();
+  /** Channels reconnected for silence, and when. */
+  private silenceRestarts = new Map<number, number>();
+  /** Silence reconnects in a row with no chat in between. */
+  private silentStreak = new Map<number, number>();
 
   constructor(
     private readonly db: Db,
@@ -61,6 +77,7 @@ export class ChannelManager {
     const linked = existsSync(this.authDir(channelId));
     const entry: LiveChannel = {
       shopId, adapter: null!, status: 'connecting', qr: null, linked, downSince: linked ? Date.now() : null, alerted: false,
+      lastChatAt: Date.now(),
     };
     entry.adapter = new BaileysAdapter(this.authDir(channelId), {
       onQr: async (qr) => {
@@ -70,6 +87,7 @@ export class ChannelManager {
       onStatus: async (status, phone) => {
         entry.status = status;
         if (status === 'connected') {
+          entry.lastChatAt = Date.now();
           entry.qr = null;
           entry.linked = true;
           if (entry.alerted) void this.alertOwner(channelId, entry, 'back');
@@ -82,6 +100,7 @@ export class ChannelManager {
           // Unlinked from the phone (or banned): it will not come back by itself, so say so right away.
           entry.alerted = true;
           void this.alertOwner(channelId, entry, 'logged_out');
+          void this.ops(channelId, 'logged_out', (who) => `${who}: logout dari HP (atau diblokir). Perlu scan ulang QR.`);
         }
         await setChannelStatus(this.db, channelId, status, phone);
         this.log.info({ channelId, status }, 'channel status');
@@ -99,9 +118,21 @@ export class ChannelManager {
       },
       onReceived: (info) => {
         this.log.info({ channelId, ...info }, 'whatsapp batch received');
+        if (!info.chats) return;
+        if (info.type === 'notify') {
+          entry.lastChatAt = Date.now();
+          this.silentStreak.delete(channelId);
+        }
+        const restartedAt = this.silenceRestarts.get(channelId);
+        if (info.type === 'append' && restartedAt && Date.now() - restartedAt < HELD_WINDOW_MS) {
+          this.silenceRestarts.delete(channelId);
+          void this.ops(channelId, 'held', (who) =>
+            `${who}: WhatsApp menahan chat yang masuk. Sudah disambung ulang otomatis dan ${info.chats} pesan tertahan sudah masuk. Kalau sering terjadi, cek log.`);
+        }
       },
       onQueueProblem: (step, problem) => {
         this.log.error({ channelId, step, problem }, 'whatsapp event step skipped');
+        void this.ops(channelId, `step:${step}`, (who) => `${who}: langkah "${step}" dilewati (${problem}). Pesan bisa terlambat.`);
       },
       onContacts: async (contacts) => {
         try {
@@ -125,6 +156,8 @@ export class ChannelManager {
           if (chatIds.length) bus.publish({ shopId, type: 'messages', chatIds });
         } catch (err) {
           this.log.error({ err, channelId }, 'failed to store messages');
+          void this.ops(channelId, 'save', (who) =>
+            `${who}: ${messages.length} pesan GAGAL disimpan (${(err as Error).message.slice(0, 120)}). Cek database.`);
         }
       },
     });
@@ -140,16 +173,51 @@ export class ChannelManager {
     return { status: e.status, qr: e.qr, down, downSince: e.downSince === null ? null : new Date(e.downSince) };
   }
 
-  /** Checks every minute for linked numbers that have been down for ALERT_AFTER_MS. */
+  /** Checks every minute for linked numbers that have been down for ALERT_AFTER_MS, or silent too long. */
   watch(): NodeJS.Timeout {
     return setInterval(() => {
       for (const [channelId, e] of this.live) {
+        if (e.status === 'connected') void this.checkSilence(channelId, e);
         if (e.alerted || e.downSince === null || Date.now() - e.downSince < ALERT_AFTER_MS) continue;
         e.alerted = true;
         bus.publish({ shopId: e.shopId, type: 'channel', channelId, status: e.status });
         void this.alertOwner(channelId, e, 'down');
+        void this.ops(channelId, 'down', (who) => `${who}: terputus lebih dari 5 menit.`);
       }
     }, 60_000);
+  }
+
+  /** "Connected" yet no chat for SILENT_OPEN_MS of opening hours: reconnect quietly (keeps the session). */
+  private async checkSilence(channelId: number, e: LiveChannel) {
+    try {
+      const shop = await getShop(this.db, e.shopId);
+      const clock = { utcOffsetMinutes: shop.utcOffsetMinutes, hours: shop.businessHours };
+      if (businessMs(new Date(e.lastChatAt), new Date(), clock) < SILENT_OPEN_MS) return;
+      if (this.live.get(channelId) !== e || e.status !== 'connected') return; // changed meanwhile
+      this.log.warn({ channelId, silentSince: new Date(e.lastChatAt) }, 'channel silent, reconnecting');
+      this.silenceRestarts.set(channelId, Date.now());
+      const streak = (this.silentStreak.get(channelId) ?? 0) + 1;
+      this.silentStreak.set(channelId, streak);
+      // A quiet shop can go 90 minutes without a chat; three times running during opening hours can't be normal.
+      if (streak >= 3) {
+        void this.ops(channelId, 'silent', (who) =>
+          `${who}: tidak ada chat masuk selama ${(streak * SILENT_OPEN_MS) / 3_600_000} jam jam buka, walau statusnya terhubung. Sudah disambung ulang ${streak}x. Cek HP-nya atau scan ulang QR.`);
+      }
+      await this.start(channelId);
+    } catch (err) {
+      this.log.warn({ err: (err as Error).message, channelId }, 'silence check failed');
+    }
+  }
+
+  private async ops(channelId: number, kind: string, text: (who: string) => string) {
+    let who = `#${channelId}`;
+    try {
+      const shopId = this.live.get(channelId)?.shopId ?? (await shopOf(this.db, 'channel', channelId));
+      if (shopId !== undefined) who = `${(await getShop(this.db, shopId)).name} #${channelId}`;
+    } catch {
+      // the alert matters more than the name
+    }
+    opsAlert(this.log, `${kind}:${channelId}`, text(who));
   }
 
   private async alertOwner(channelId: number, e: LiveChannel, kind: 'down' | 'logged_out' | 'back') {
